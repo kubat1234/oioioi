@@ -10,6 +10,8 @@ from django.core import mail
 from django.test import RequestFactory
 from django.urls import reverse
 
+# Registers status functions, normally imported on the first rendered page.
+import oioioi.questions.processors  # noqa: F401
 from oioioi.base.notification import NotificationHandler
 from oioioi.base.tests import TestCase, check_not_accessible, fake_time
 from oioioi.base.tests.tests import TestPublicMessage
@@ -867,3 +869,29 @@ class TestAddQuestionMessage(TestPublicMessage):
     edit_viewname = "edit_add_question_message"
     viewname = "add_contest_message"
     controller_name = "oioioi.questions.tests.PublicMessageContestController"
+
+
+class TestNavbarMessagesStatus(TestCase):
+    fixtures = [
+        "test_users",
+        "test_contest",
+        "test_full_package",
+        "test_problem_instance",
+        "test_messages",
+    ]
+
+    def _status(self):
+        contest = Contest.objects.get()
+        return self.client.get(reverse("get_status", kwargs={"contest_id": contest.id})).json()
+
+    def test_admin_gets_badge_and_fast_sync(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        status = self._status()
+        self.assertIn("contest_new_messages", status["messages_badge"])
+        self.assertLessEqual(status["sync_time"], 30000)
+
+    def test_participant_keeps_slow_sync(self):
+        self.assertTrue(self.client.login(username="test_user"))
+        status = self._status()
+        self.assertIn("messages_badge", status)
+        self.assertEqual(status["sync_time"], 300000)

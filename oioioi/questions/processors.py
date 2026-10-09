@@ -23,9 +23,18 @@ def navbar_tip_processor(request):
     return {"extra_navbar_right_messages": lazy(generator, str)()}
 
 
+# How often contest admins' pages check for new questions, in ms.
+ADMIN_MESSAGES_SYNC_TIME = 30000
+
+
 @status_registry.register
 def get_messages(request, response):
-    response["messages"] = navbar_messages_generator(request)
+    messages = navbar_messages_generator(request)
+    response["messages"] = messages
+    # Rendered badge, so that common/navbar_messages.js can refresh it.
+    response["messages_badge"] = make_navbar_badge(**messages) if messages else ""
+    if getattr(request, "contest", None) is not None and is_contest_basicadmin(request):
+        response["sync_time"] = min(ADMIN_MESSAGES_SYNC_TIME, response.get("sync_time", ADMIN_MESSAGES_SYNC_TIME))
     return response
 
 
