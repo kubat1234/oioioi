@@ -201,6 +201,7 @@ INSTALLED_APPS = (
     'oioioi.publicsolutions',
     'oioioi.testspackages',
     # 'oioioi.pa',
+    # 'oioioi.czeciecamp',
     # 'oioioi.notifications',
     # 'oioioi.mailsubmit',
     # 'oioioi.portals',

@@ -1,0 +1,52 @@
+{% extends "base-with-menu.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Create Czecie camp" %}{% endblock %}
+
+{% block main-content %}
+<h1>{% trans "Create Czecie camp" %}</h1>
+<form method="post" class="row g-3" style="max-width: 48rem">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+        <div class="col-md-6">
+            {% if field.field.widget.input_type == "checkbox" %}
+                <div class="form-check mt-4">
+                    {{ field }}
+                    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                </div>
+            {% else %}
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+            {% endif %}
+            {{ field.errors }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+        </div>
+    {% endfor %}
+    <div class="col-12"><button type="submit" class="btn btn-primary">{% trans "Create" %}</button></div>
+</form>
+<script>
+(function () {
+    var name = document.getElementById("{{ form.name.id_for_label }}");
+    var id = document.getElementById("{{ form.contest_id.id_for_label }}");
+    // Stop following the name once the ID is edited by hand.
+    var manual = id.value !== "";
+
+    function slug(text) {
+        return text.replace(/ł/g, "l").replace(/Ł/g, "L")
+            .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+            .replace(/[^a-z0-9_\s-]/g, "")
+            .trim()
+            .replace(/[\s-]+/g, "-")
+            .slice(0, 32)
+            .replace(/^[-_]+|[-_]+$/g, "");
+    }
+
+    name.addEventListener("input", function () {
+        if (!manual) { id.value = slug(name.value); }
+    });
+    id.addEventListener("input", function () { manual = id.value !== ""; });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,231 @@
+{% extends "base-with-menu.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Camp panel" %}{% endblock %}
+
+{% block styles %}
+{{ block.super }}
+<style>
+    .camp-rounds input[type="text"] { min-width: 9rem; }
+    .camp-rounds input[type="datetime-local"] { min-width: 12rem; }
+</style>
+{% endblock %}
+
+{% block main-content %}
+<h1>{{ contest.name }}</h1>
+
+<p>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'add_or_update_problem' contest_id=contest.id %}">{% trans "Add problem" %}</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'oioioiadmin:contests_probleminstance_changelist' %}">{% trans "Problems" %}</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'oioioiadmin:contests_contest_change' contest.id %}">{% trans "Contest settings" %}</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'default_ranking' contest_id=contest.id %}">{% trans "Rankings" %}</a>
+</p>
+
+<h2 class="h4 mt-4">{% trans "Rounds" %}</h2>
+<div class="table-responsive">
+<table class="table table-sm align-middle camp-rounds">
+    <thead>
+        <tr>
+            <th></th>
+            <th>{% trans "Name" %}</th>
+            <th>{% trans "Start" %}</th>
+            <th>{% trans "End" %}</th>
+            <th>{% trans "Trial" %}</th>
+            <th>{% trans "Results" %}</th>
+            <th>{% trans "Ranking" %}</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rounds %}
+            {% with round=row.round form=row.form %}
+            <tr class="js-round-row">
+                <td class="text-nowrap">
+                    <input type="hidden" name="order" value="{{ round.id }}" form="rounds-form">
+                    <button type="button" class="btn btn-link btn-sm p-0 js-move-up" title="{% trans 'Move up' %}">▲</button>
+                    <button type="button" class="btn btn-link btn-sm p-0 js-move-down" title="{% trans 'Move down' %}">▼</button>
+                </td>
+                <td>{{ form.name }}</td>
+                <td>{{ form.start_date }}</td>
+                <td>{{ form.end_date }}</td>
+                <td class="text-center">{{ form.is_trial }}</td>
+                <td class="text-nowrap">
+                    {% if config.results_visible_during_round %}
+                    <span class="text-muted small">{% trans "always visible" %}</span>
+                    {% else %}
+                    <form method="post" action="{% url 'czeciecamp_round_action' contest_id=contest.id round_id=round.id action=row.results_visible|yesno:'hide_results,show_results' %}" class="d-inline">
+                        {% csrf_token %}
+                        {% if row.results_visible %}
+                            <span class="text-success">✔</span>
+                            <button type="submit" class="btn btn-link btn-sm p-0 ms-1">{% trans "hide" %}</button>
+                        {% else %}
+                            {% if round.results_date %}<span class="text-muted small">{{ round.results_date|date:"d.m H:i" }}</span>{% endif %}
+                            <button type="submit" class="btn btn-sm btn-primary">{% trans "Show now" %}</button>
+                        {% endif %}
+                    </form>
+                    {% endif %}
+                </td>
+                <td class="text-nowrap">
+                    <form method="post" action="{% url 'czeciecamp_round_action' contest_id=contest.id round_id=round.id action=row.ranking_visible|yesno:'hide_ranking,show_ranking' %}" class="d-inline">
+                        {% csrf_token %}
+                        {% if row.ranking_visible %}
+                            <span class="text-success">✔</span>
+                            <button type="submit" class="btn btn-link btn-sm p-0 ms-1">{% trans "hide" %}</button>
+                        {% else %}
+                            {% if round.public_results_date %}<span class="text-muted small">{{ round.public_results_date|date:"d.m H:i" }}</span>{% endif %}
+                            <button type="submit" class="btn btn-sm btn-primary">{% trans "Show now" %}</button>
+                        {% endif %}
+                    </form>
+                </td>
+                <td class="text-end">
+                    <form method="post" action="{% url 'czeciecamp_delete_round' contest_id=contest.id round_id=round.id %}"
+                          onsubmit="return confirm('{% blocktrans with name=round.name|escapejs %}Delete {{ name }}? Its problems stay in the contest without a round.{% endblocktrans %}');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-link btn-sm text-danger p-0 fs-5 lh-1 text-decoration-none" title="{% trans 'Delete round' %}">×</button>
+                    </form>
+                </td>
+            </tr>
+            {% endwith %}
+        {% empty %}
+            <tr><td colspan="8" class="text-muted">{% trans "No rounds yet." %}</td></tr>
+        {% endfor %}
+        {% with form=new_round_form %}
+        <tr class="table-light">
+            <td class="text-muted">+</td>
+            <td>{{ form.name }}</td>
+            <td>{{ form.start_date }}</td>
+            <td>{{ form.end_date }}</td>
+            <td class="text-center">{{ form.is_trial }}</td>
+            <td colspan="3">
+                <form method="post" id="new-round-form" action="{% url 'czeciecamp_add_round' contest_id=contest.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-primary">{% trans "Add round" %}</button>
+                </form>
+            </td>
+        </tr>
+        {% endwith %}
+    </tbody>
+</table>
+</div>
+{% if rounds %}
+<form method="post" id="rounds-form" action="{% url 'czeciecamp_save_rounds' contest_id=contest.id %}" class="d-flex align-items-center gap-2">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary">{% trans "Save rounds" %}</button>
+    <span class="text-warning small d-none" id="rounds-unsaved">{% trans "Unsaved changes" %}</span>
+</form>
+{% endif %}
+<script>
+(function () {
+    var form = document.getElementById("rounds-form");
+    if (!form) { return; }
+    var tbody = document.querySelector(".camp-rounds tbody");
+    var unsaved = document.getElementById("rounds-unsaved");
+    var dirty = false;
+
+    function markDirty() {
+        dirty = true;
+        unsaved.classList.remove("d-none");
+    }
+
+    function refreshArrows() {
+        var rows = tbody.querySelectorAll(".js-round-row");
+        rows.forEach(function (row, i) {
+            row.querySelector(".js-move-up").disabled = i === 0;
+            row.querySelector(".js-move-down").disabled = i === rows.length - 1;
+        });
+    }
+
+    tbody.addEventListener("click", function (event) {
+        var button = event.target.closest(".js-move-up, .js-move-down");
+        if (!button) { return; }
+        var row = button.closest(".js-round-row");
+        if (button.classList.contains("js-move-up")) {
+            var previous = row.previousElementSibling;
+            if (previous && previous.classList.contains("js-round-row")) { tbody.insertBefore(row, previous); markDirty(); }
+        } else {
+            var next = row.nextElementSibling;
+            if (next && next.classList.contains("js-round-row")) { tbody.insertBefore(next, row); markDirty(); }
+        }
+        refreshArrows();
+    });
+
+    document.querySelectorAll('[form="rounds-form"]').forEach(function (input) {
+        input.addEventListener("change", markDirty);
+    });
+
+    form.addEventListener("submit", function () { dirty = false; });
+    window.addEventListener("beforeunload", function (event) {
+        if (dirty) { event.preventDefault(); event.returnValue = ""; }
+    });
+
+    refreshArrows();
+})();
+</script>
+
+<h2 class="h4 mt-4">{% trans "Ranking freeze" %}</h2>
+<p>
+    {% if config.rankings_unfrozen %}
+        {% trans "Rankings are unfrozen. Participants see the final rankings." %}
+    {% elif frozen %}
+        {% blocktrans with date=freeze_date|date:"d.m H:i" %}Rankings are frozen for participants since {{ date }}.{% endblocktrans %}
+    {% elif freeze_date %}
+        {% blocktrans with date=freeze_date|date:"d.m H:i" %}Rankings will freeze for participants at {{ date }}.{% endblocktrans %}
+    {% else %}
+        {% trans "Rankings will freeze for participants at the end of the last round." %}
+    {% endif %}
+</p>
+<form method="post" class="row g-2 align-items-end mb-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="freeze_date">
+    {% with field=freeze_form.freeze_date %}
+    <div class="col-auto">
+        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+    </div>
+    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">{% trans "Save" %}</button></div>
+    <div class="col-12 form-text">{{ field.help_text }}</div>
+    {% endwith %}
+</form>
+{% if config.rankings_unfrozen %}
+    <form method="post" action="{% url 'czeciecamp_freeze' contest_id=contest.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-secondary">{% trans "Freeze rankings again" %}</button>
+    </form>
+{% else %}
+    <form method="post" action="{% url 'czeciecamp_unfreeze' contest_id=contest.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-warning">{% trans "Unfreeze rankings" %}</button>
+    </form>
+{% endif %}
+
+<h2 class="h4 mt-4">{% trans "Settings" %}</h2>
+<form method="post" class="row g-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="settings">
+    {% for field in settings_form %}
+        <div class="col-md-6">
+            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field.errors }}
+            {{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+        </div>
+    {% endfor %}
+    <div class="col-12"><button type="submit" class="btn btn-primary">{% trans "Save" %}</button></div>
+</form>
+
+<h2 class="h4 mt-4">{% trans "Participants" %} ({{ participants|length }})</h2>
+<form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="participants">
+    <label class="form-label" for="{{ participants_form.users.id_for_label }}">{{ participants_form.users.label }}</label>
+    {{ participants_form.users.errors }}
+    {{ participants_form.users }}
+    <button type="submit" class="btn btn-primary mt-2">{% trans "Add participants" %}</button>
+    <a class="btn btn-link mt-2" href="{% url 'oioioiadmin:participants_participant_changelist' %}">{% trans "Manage participants" %}</a>
+</form>
+{% if participants %}
+    <p class="mt-3 small">
+        {% for participant in participants %}{{ participant.user.get_full_name|default:participant.user.username }}{% if not forloop.last %}, {% endif %}{% endfor %}
+    </p>
+{% endif %}
+{% endblock %}

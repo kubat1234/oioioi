@@ -61,6 +61,7 @@ INSTALLED_APPS = (
     'oioioi.problemsharing',
     'oioioi.usercontests',
     'oioioi.mp',
+    'oioioi.czeciecamp',
     'oioioi.welcomepage',
     'oauth2_provider',
     'oioioi.oauth',

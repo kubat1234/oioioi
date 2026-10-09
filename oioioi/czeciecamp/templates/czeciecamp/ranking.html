@@ -1,0 +1,74 @@
+{% load i18n pagination_tags get_user_name simple_filters %}
+
+{% if frozen_at %}
+    <div class="alert alert-info">
+        {% blocktrans with date=frozen_at|date:"Y-m-d H:i" %}The ranking is frozen. Stałe counts submissions sent until {{ date }}.{% endblocktrans %}
+    </div>
+{% elif frozen_for_participants %}
+    <div class="alert alert-warning">
+        {% trans "Participants see a frozen ranking. You see the live one." %}
+    </div>
+{% endif %}
+
+{% if rows %}
+    <div class="float-start nav-content table-responsive-md">
+        {% autopaginate rows participants_on_page %}
+        {% paginate %}
+        <table class="table table-ranking table-striped table-sm submission">
+            <thead>
+                <tr>
+                    <th class="text-end">#</th>
+                    <th>{% trans "User" %}</th>
+                    <th class="text-end">{% trans "Sum" %}</th>
+                    {% if is_main %}
+                        <th class="text-end">{% if daily_weight == 2 %}2 × {% endif %}{% trans "Dzienne" %}</th>
+                        <th class="text-end">{% trans "Stałe" %}</th>
+                    {% endif %}
+                    {% for pi, statement_visible in problem_instances %}
+                        <th class="text-end">
+                            {% if statement_visible %}
+                                <a href="{% url 'problem_statement' contest_id=contest.id problem_instance=pi.short_name %}">{{ pi.get_short_name_display }}</a>
+                            {% else %}
+                                {{ pi.get_short_name_display }}
+                            {% endif %}
+                        </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr id="ranking_row_{{ row.user.id }}">
+                        <td class="text-end">{{ row.place }}</td>
+                        <td class="user-cell">{% public_name row.user %}</td>
+                        <td class="text-end sum-cell"><strong>{{ row.sum }}</strong></td>
+                        {% if is_main %}
+                            <td class="text-end">{{ row.daily_sum }}</td>
+                            <td class="text-end">{{ row.stale_sum }}</td>
+                        {% endif %}
+                        {% for cell in row.cells %}
+                            <td class="text-end">
+                                {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
+                                {% if is_main %}
+                                    {% if cell.daily is not None or cell.stale is not None %}
+                                        {{ cell.daily|default_if_none:'–' }} / {{ cell.stale|default_if_none:'–' }}
+                                    {% endif %}
+                                {% else %}
+                                    {{ cell.value|default_if_none:'' }}
+                                {% endif %}
+                                {% if is_admin and cell.url %}</a>{% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% paginate %}
+        {% if is_main %}
+            <p class="text-muted small">{% trans "Problem cells show Dzienne / Stałe." %}</p>
+        {% endif %}
+    </div>
+{% else %}
+    <div class="empty-space-filler alert alert-info">
+        {% blocktrans %}Strange, there is no one in this ranking...{% endblocktrans %}
+    </div>
+{% endif %}
