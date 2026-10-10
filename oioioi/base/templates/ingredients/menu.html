@@ -18,6 +18,7 @@
                     </h5>
                 </div>
                 <div id="menu-{{ forloop.counter }}" class="card-collapse collapse {% if forloop.last %}show{% endif %}"
+                     data-menu-key="{{ registry.text|slugify }}"
                      role="tabpanel" aria-labelledby="menu-heading-{{ forloop.counter }}"
                      aria-expanded="{% if forloop.last %}true{% else %}false{% endif %}"
                      data-parent="#menu-accordion">

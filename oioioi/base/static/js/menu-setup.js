@@ -1,25 +1,45 @@
 $(document).ready(function() {
     const menu = $('#menu-accordion');
-    const subMenus = menu.find('.card-collapse');
+    const storageKey = 'openedMenus';
     const openedClassName = 'show';
 
-    // when a group is shown, save it as the active accordion group
-    menu.on('shown.bs.collapse', function() {
-        const activeId = menu.find('.' + openedClassName).attr('id');
-        localStorage.setItem('activeMenuItem', activeId);
+    // Remembers for every section (by its data-menu-key) whether it was open.
+    // Sections without a remembered state keep their default from the template.
+    let saved = {};
+    try {
+        saved = JSON.parse(localStorage.getItem(storageKey)) || {};
+    } catch {
+        saved = {};
+    }
+
+    function setToggleState(section, opened) {
+        const toggle = menu.find('[data-bs-target="#' + section.attr('id') + '"]');
+        toggle.toggleClass('collapsed', !opened);
+        toggle.attr('aria-expanded', opened ? 'true' : 'false');
+    }
+
+    menu.find('.card-collapse').each(function() {
+        const section = $(this);
+        const key = section.data('menu-key');
+        if (key in saved) {
+            section.toggleClass(openedClassName, saved[key]);
+        }
+        setToggleState(section, section.hasClass(openedClassName));
     });
 
-    const saved = localStorage.getItem('activeMenuItem');
-    if (saved !== null) {
-        // remove default collapse settings
-        subMenus.removeClass(openedClassName);
-
-        const recentlyOpened = $('#' + saved);
-        if (recentlyOpened.length) {
-            recentlyOpened.addClass(openedClassName);
-        } else {
-            const lastMenuItem = menu.find('[id*="menu-"]').last();
-            lastMenuItem.addClass(openedClassName);
+    function remember(event, opened) {
+        const section = $(event.target);
+        if (!section.hasClass('card-collapse')) {
+            return;
+        }
+        saved[section.data('menu-key')] = opened;
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(saved));
+        } catch {
+            // Storage may be unavailable (e.g. private mode); just don't remember.
         }
     }
+
+    menu.on('shown.bs.collapse', function(event) { remember(event, true); });
+    menu.on('hidden.bs.collapse', function(event) { remember(event, false); });
 });
