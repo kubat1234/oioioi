@@ -161,6 +161,7 @@ msgstr "Konfiguracje obozów Czecie"
 msgid "Participants see a frozen ranking. You see the live one."
 msgstr "Uczestnicy widzą zamrożony ranking. Ty widzisz bieżący."
 
+msgctxt "ranking"
 msgid "User"
 msgstr "Użytkownik"
 
