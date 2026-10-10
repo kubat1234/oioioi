@@ -128,6 +128,21 @@ class TestCampRankings(CampTestCase):
         self.assertEqual([row["user"] for row in rows], [self.user1, self.user2])
         self.assertEqual([row["place"] for row in rows], [1, 1])
 
+    def test_combined_cells_diff_and_medals(self):
+        config = get_camp_config(self.contest)
+        config.daily_weight = 2
+        config.save()
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 30)
+        self._submit(self.user2, self.pi1, _date(1, hour=7), 50)
+        data = self._ranking(MAIN_KEY)
+        row1, row2 = self._row(data, self.user1), self._row(data, self.user2)
+        cell = row1["cells"][[pi for pi, _visible in data["problem_instances"]].index(self.pi1)]
+        self.assertEqual((cell["weighted_daily"], cell["stale"], cell["value"]), (60, 30, 90))
+        self.assertEqual((row1["diff"], row1["medal"]), (0, 1))
+        self.assertEqual((row2["diff"], row2["medal"]), (-40, 2))
+        self.assertTrue(data["is_aggregate"])
+        self.assertFalse(self._ranking(str(self.round1.id))["is_aggregate"])
+
     def test_unpublished_round_is_hidden(self):
         self.round2.public_results_date = None
         self.round2.save()

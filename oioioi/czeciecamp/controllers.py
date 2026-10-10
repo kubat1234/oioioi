@@ -161,6 +161,10 @@ class CzecieCampRankingController(DefaultRankingController):
         # Full keys contain a state tag, so we invalidate the whole contest.
         Ranking.invalidate_contest(self.contest)
 
+    def can_search_for_users(self):
+        # Camp rankings are small, the search form is just clutter.
+        return False
+
     def filter_users_for_ranking(self, key, queryset):
         return self.contest.controller.registration_controller().filter_participants(queryset)
 
@@ -229,14 +233,16 @@ class CzecieCampRankingController(DefaultRankingController):
                 stale_sum += stale[0] if stale else 0
                 show_stale = partial_key == STALE_KEY or (partial_key not in AGGREGATE_KEYS and pi.round.is_trial)
                 shown = stale if show_stale else daily
-                cells.append(
-                    {
-                        "daily": daily[0] if daily else None,
-                        "stale": stale[0] if stale else None,
-                        "value": shown[0] if shown else None,
-                        "url": self._submission_url(stale if partial_key == MAIN_KEY else shown),
-                    }
-                )
+                cell = {
+                    "daily": daily[0] if daily else None,
+                    "stale": stale[0] if stale else None,
+                    "value": shown[0] if shown else None,
+                    "url": self._submission_url(stale if partial_key == MAIN_KEY else shown),
+                }
+                if partial_key == MAIN_KEY and (daily or stale):
+                    cell["weighted_daily"] = config.daily_weight * (cell["daily"] or 0)
+                    cell["value"] = cell["weighted_daily"] + (cell["stale"] or 0)
+                cells.append(cell)
             if partial_key == MAIN_KEY:
                 total = config.daily_weight * daily_sum + stale_sum
             elif partial_key == STALE_KEY:
@@ -256,11 +262,16 @@ class CzecieCampRankingController(DefaultRankingController):
             )
 
         self._assign_places(rows, itemgetter("sum"))
+        leader_sum = rows[0]["sum"] if rows else 0
+        for row in rows:
+            row["diff"] = row["sum"] - leader_sum
+            row["medal"] = row["place"] if row["place"] <= 3 and row["sum"] > 0 else None
         return {
             "rows": rows,
             "problem_instances": self._get_pis_with_visibility(key, pis),
             "participants_on_page": getattr(settings, "PARTICIPANTS_ON_PAGE", 100),
             "is_main": partial_key == MAIN_KEY,
+            "is_aggregate": partial_key in AGGREGATE_KEYS,
             "daily_weight": config.daily_weight,
             "frozen_at": frozen_at,
             "frozen_for_participants": self._key_permission(key) in PRIVILEGED_PERMISSIONS and is_frozen(self.contest, config, now),

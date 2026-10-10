@@ -14,15 +14,16 @@
     <div class="float-start nav-content table-responsive-md">
         {% autopaginate rows participants_on_page %}
         {% paginate %}
-        <table class="table table-ranking table-striped table-sm submission">
+        <table class="table table-ranking camp-ranking table-striped table-sm submission">
             <thead>
                 <tr>
                     <th class="text-end">#</th>
                     <th>{% trans "User" %}</th>
-                    <th class="text-end">{% trans "Sum" %}</th>
-                    {% if is_main %}
-                        <th class="text-end">{% if daily_weight == 2 %}2 × {% endif %}{% trans "Dzienne" %}</th>
-                        <th class="text-end">{% trans "Stałe" %}</th>
+                    {% if is_aggregate %}
+                        <th class="text-end">∑</th>
+                        <th class="text-end">±</th>
+                    {% else %}
+                        <th class="text-end">{% trans "Sum" %}</th>
                     {% endif %}
                     {% for pi, statement_visible in problem_instances %}
                         <th class="text-end">
@@ -37,20 +38,19 @@
             </thead>
             <tbody>
                 {% for row in rows %}
-                    <tr id="ranking_row_{{ row.user.id }}">
+                    <tr id="ranking_row_{{ row.user.id }}"{% if row.medal %} class="camp-medal-{{ row.medal }}"{% endif %}>
                         <td class="text-end">{{ row.place }}</td>
                         <td class="user-cell">{% public_name row.user %}</td>
                         <td class="text-end sum-cell"><strong>{{ row.sum }}</strong></td>
-                        {% if is_main %}
-                            <td class="text-end">{{ row.daily_sum }}</td>
-                            <td class="text-end">{{ row.stale_sum }}</td>
+                        {% if is_aggregate %}
+                            <td class="text-end text-muted">{% if row.diff %}{{ row.diff }}{% endif %}</td>
                         {% endif %}
                         {% for cell in row.cells %}
                             <td class="text-end">
                                 {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
                                 {% if is_main %}
                                     {% if cell.daily is not None or cell.stale is not None %}
-                                        {{ cell.daily|default_if_none:'–' }} / {{ cell.stale|default_if_none:'–' }}
+                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Dzienne" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "Stałe" %}: 1×{{ cell.stale|default_if_none:0 }} = {{ cell.stale|default_if_none:0 }}</span></div>
                                     {% endif %}
                                 {% else %}
                                     {{ cell.value|default_if_none:'' }}
@@ -63,9 +63,6 @@
             </tbody>
         </table>
         {% paginate %}
-        {% if is_main %}
-            <p class="text-muted small">{% trans "Problem cells show Dzienne / Stałe." %}</p>
-        {% endif %}
     </div>
 {% else %}
     <div class="empty-space-filler alert alert-info">

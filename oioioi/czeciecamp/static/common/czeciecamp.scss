@@ -1,0 +1,64 @@
+.table-ranking {
+  &.camp-ranking {
+    width: auto;
+    td, th {
+      width: auto;
+      min-width: 3.5em;
+      padding-left: 0.4em;
+      padding-right: 0.4em;
+      text-align: center !important;
+    }
+    td:first-child, th:first-child {
+      min-width: 0;
+    }
+    .user-cell {
+      min-width: 8em;
+    }
+  }
+  @each $place, $color in (1: gold, 2: silver, 3: #cd7f32) {
+    .camp-medal-#{$place} > td:first-child {
+      background: $color !important;
+    }
+    .camp-medal-#{$place} > td:nth-child(2) {
+      background: linear-gradient(to right, $color, transparent) !important;
+    }
+  }
+  .camp-combined {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+    border-bottom: 1px darkgray dotted;
+  }
+  .camp-combined-tooltip {
+    visibility: hidden;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    z-index: 10;
+    width: 16em;
+    margin-top: 5px;
+    margin-left: -8em;
+    padding: 5px;
+    border: solid 2px black;
+    border-radius: 6px;
+    background-color: darkgray;
+    color: black;
+    font-family: monospace;
+    text-align: left;
+    white-space: normal;
+    cursor: auto;
+  }
+  .camp-combined-tooltip::after {
+    content: " ";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: transparent transparent black transparent;
+  }
+  .camp-combined:hover .camp-combined-tooltip {
+    visibility: visible;
+  }
+}
