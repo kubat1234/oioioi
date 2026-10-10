@@ -1,0 +1,267 @@
+# Polish translations of the Czecie Camp module.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: pl\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
+
+msgid "Start"
+msgstr "Początek"
+
+msgid "End"
+msgstr "Koniec"
+
+msgid "A round with this name already exists."
+msgstr "Runda o tej nazwie już istnieje."
+
+msgid "Usernames or emails, one per line"
+msgstr "Loginy lub adresy e-mail, po jednym w wierszu"
+
+msgid "Unknown users: %(users)s"
+msgstr "Nieznani użytkownicy: %(users)s"
+
+msgid "Name"
+msgstr "Nazwa"
+
+msgid "ID"
+msgstr "ID"
+
+msgid "Used in URLs. Filled in from the name."
+msgstr "Używane w adresach URL. Uzupełniane na podstawie nazwy."
+
+msgid "Start (Day 0)"
+msgstr "Początek (Dzień 0)"
+
+msgid "Number of days after Day 0"
+msgstr "Liczba dni po Dniu 0"
+
+msgid "Day 1, Day 2, ... one round per day after Day 0."
+msgstr "Dzień 1, Dzień 2, ... jedna runda na każdy dzień po Dniu 0."
+
+msgid "Main ranking"
+msgstr "Ranking główny"
+
+msgid "Enter an ID."
+msgstr "Podaj ID."
+
+msgid "A contest with this ID already exists."
+msgstr "Konkurs o tym ID już istnieje."
+
+msgid "Day %(number)d"
+msgstr "Dzień %(number)d"
+
+msgid "Czecie panel"
+msgstr "Panel Czecie"
+
+msgid "Settings saved."
+msgstr "Zapisano ustawienia."
+
+msgid "Freeze time saved."
+msgstr "Zapisano czas zamrożenia."
+
+msgid "Added %(count)d participants."
+msgstr "Dodano uczestników: %(count)d."
+
+msgid "Rankings frozen for participants."
+msgstr "Rankingi zamrożone dla uczestników."
+
+msgid "Rankings unfrozen. Participants now see the final rankings."
+msgstr "Rankingi odmrożone. Uczestnicy widzą teraz ostateczne rankingi."
+
+msgid "Added %(name)s."
+msgstr "Dodano: %(name)s."
+
+msgid "Rounds saved."
+msgstr "Zapisano rundy."
+
+msgid "Deleted %(name)s."
+msgstr "Usunięto: %(name)s."
+
+msgid "Create Czecie camp"
+msgstr "Utwórz obóz Czecie"
+
+msgid "Camp created. Set the round times and add problems and participants below."
+msgstr "Utworzono obóz. Poniżej ustaw czasy rund oraz dodaj zadania i uczestników."
+
+msgid "Czecie Camp Contest"
+msgstr "Obóz Czecie"
+
+msgid "The submissions are scored on a set of groups of test cases.\nParticipants may submit to a round after it ends. The daily ranking counts only submissions sent during the round, the all-time ranking counts all submissions sent until the counting end."
+msgstr "Zgłoszenia są oceniane na grupach testów.\nUczestnicy mogą wysyłać rozwiązania do rundy także po jej zakończeniu. Ranking dzienny liczy tylko zgłoszenia wysłane w trakcie rundy, ranking stały liczy wszystkie zgłoszenia wysłane do końca liczenia."
+
+msgid "Czecie Camp ranking"
+msgstr "Ranking obozu Czecie"
+
+msgid "All-time"
+msgstr "Stałe"
+
+msgid "Daily"
+msgstr "Dzienne"
+
+msgid "No."
+msgstr "Lp."
+
+msgid "Login"
+msgstr "Login"
+
+msgid "First name"
+msgstr "Imię"
+
+msgid "Last name"
+msgstr "Nazwisko"
+
+msgid "Sum"
+msgstr "Suma"
+
+msgid "Daily + All-time"
+msgstr "Dzienne + Stałe"
+
+msgid "2 × Daily + All-time"
+msgstr "2 × Dzienne + Stałe"
+
+msgid "contest"
+msgstr "konkurs"
+
+msgid "counting end"
+msgstr "koniec liczenia"
+
+msgid "Submissions sent after this moment are still judged, but they do not count in any ranking. Empty means no limit."
+msgstr "Zgłoszenia wysłane po tej chwili są nadal oceniane, ale nie liczą się do żadnego rankingu. Puste oznacza brak limitu."
+
+msgid "main ranking"
+msgstr "ranking główny"
+
+msgid "results visible during rounds"
+msgstr "wyniki widoczne w trakcie rund"
+
+msgid "Participants see full results of their submissions right away. Otherwise only example tests until results are shown."
+msgstr "Uczestnicy od razu widzą pełne wyniki swoich zgłoszeń. W przeciwnym razie tylko testy przykładowe, dopóki wyniki nie zostaną pokazane."
+
+msgid "rankings unfrozen"
+msgstr "rankingi odmrożone"
+
+msgid "Rankings freeze for participants at the end of the last round, until unfrozen."
+msgstr "Rankingi zamrażają się dla uczestników na koniec ostatniej rundy, do czasu odmrożenia."
+
+msgid "freeze time"
+msgstr "czas zamrożenia"
+
+msgid "Empty means the end of the last round."
+msgstr "Puste oznacza koniec ostatniej rundy."
+
+msgid "round order"
+msgstr "kolejność rund"
+
+msgid "Czecie camp config"
+msgstr "Konfiguracja obozu Czecie"
+
+msgid "Czecie camp configs"
+msgstr "Konfiguracje obozów Czecie"
+
+msgid "Participants see a frozen ranking. You see the live one."
+msgstr "Uczestnicy widzą zamrożony ranking. Ty widzisz bieżący."
+
+msgid "User"
+msgstr "Użytkownik"
+
+msgid "The ranking is frozen. All-time counts submissions sent until %(date)s."
+msgstr "Ranking jest zamrożony. Stałe liczy zgłoszenia wysłane do %(date)s."
+
+msgid "Strange, there is no one in this ranking..."
+msgstr "Dziwne, w tym rankingu nikogo nie ma..."
+
+msgid "Add problem"
+msgstr "Dodaj zadanie"
+
+msgid "Problems"
+msgstr "Zadania"
+
+msgid "Contest settings"
+msgstr "Ustawienia konkursu"
+
+msgid "Rankings"
+msgstr "Rankingi"
+
+msgid "Rounds"
+msgstr "Rundy"
+
+msgid "Trial"
+msgstr "Próbna"
+
+msgid "Results"
+msgstr "Wyniki"
+
+msgid "Ranking"
+msgstr "Ranking"
+
+msgid "Move up"
+msgstr "Przesuń w górę"
+
+msgid "Move down"
+msgstr "Przesuń w dół"
+
+msgid "always visible"
+msgstr "zawsze widoczne"
+
+msgid "hide"
+msgstr "ukryj"
+
+msgid "Show now"
+msgstr "Pokaż teraz"
+
+msgid "Delete round"
+msgstr "Usuń rundę"
+
+msgid "No rounds yet."
+msgstr "Nie ma jeszcze rund."
+
+msgid "Add round"
+msgstr "Dodaj rundę"
+
+msgid "Save rounds"
+msgstr "Zapisz rundy"
+
+msgid "Unsaved changes"
+msgstr "Niezapisane zmiany"
+
+msgid "Ranking freeze"
+msgstr "Zamrożenie rankingu"
+
+msgid "Rankings are unfrozen. Participants see the final rankings."
+msgstr "Rankingi są odmrożone. Uczestnicy widzą ostateczne rankingi."
+
+msgid "Rankings will freeze for participants at the end of the last round."
+msgstr "Rankingi zamrożą się dla uczestników na koniec ostatniej rundy."
+
+msgid "Save"
+msgstr "Zapisz"
+
+msgid "Freeze rankings again"
+msgstr "Zamroź rankingi ponownie"
+
+msgid "Unfreeze rankings"
+msgstr "Odmroź rankingi"
+
+msgid "Settings"
+msgstr "Ustawienia"
+
+msgid "Participants"
+msgstr "Uczestnicy"
+
+msgid "Add participants"
+msgstr "Dodaj uczestników"
+
+msgid "Manage participants"
+msgstr "Zarządzaj uczestnikami"
+
+msgid "Delete %(name)s? Its problems stay in the contest without a round."
+msgstr "Usunąć %(name)s? Jej zadania zostaną w konkursie bez rundy."
+
+msgid "Rankings are frozen for participants since %(date)s."
+msgstr "Rankingi są zamrożone dla uczestników od %(date)s."
+
+msgid "Rankings will freeze for participants at %(date)s."
+msgstr "Rankingi zamrożą się dla uczestników o %(date)s."
+
+msgid "Create"
+msgstr "Utwórz"

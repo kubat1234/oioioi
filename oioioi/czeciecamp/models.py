@@ -10,7 +10,7 @@ check_django_app_dependencies(__name__, ["oioioi.participants"])
 class CzecieCampConfig(models.Model):
     """Per-camp settings of a Czecie Camp Contest."""
 
-    DAILY_WEIGHT_CHOICES = [(1, _("Dzienne + Stałe")), (2, _("2 × Dzienne + Stałe"))]
+    DAILY_WEIGHT_CHOICES = [(1, _("Daily + All-time")), (2, _("2 × Daily + All-time"))]
 
     contest = models.OneToOneField(
         Contest,

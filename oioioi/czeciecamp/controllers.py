@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.db.models import Max
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.contests.models import ProblemInstance, Submission
@@ -61,8 +61,8 @@ class CzecieCampContestController(ProgrammingContestController):
     create_forum = False
     scoring_description = _(
         "The submissions are scored on a set of groups of test cases.\n"
-        "Participants may submit to a round after it ends. Dzienne ranking counts only submissions "
-        "sent during the round, Stałe ranking counts all submissions sent until the counting end."
+        "Participants may submit to a round after it ends. The daily ranking counts only submissions "
+        "sent during the round, the all-time ranking counts all submissions sent until the counting end."
     )
 
     def registration_controller(self):
@@ -107,14 +107,19 @@ class CzecieCampRankingController(DefaultRankingController):
 
     A full key ends with a tag describing which rounds are public and whether
     the ranking is frozen, so a scheduled publication or the freeze yields
-    a fresh ranking instead of a stale cached one.
+    a fresh ranking instead of a stale cached one, followed by the viewer's
+    language, because rankingsd renders the HTML once per key.
     """
 
     description = _("Czecie Camp ranking")
 
     def get_full_key(self, request, partial_key):
         key = super().get_full_key(request, partial_key)
-        return key + "#" + self._state_tag(self._key_permission(key), request.timestamp)
+        return "#".join([key, self._state_tag(self._key_permission(key), request.timestamp), translation.get_language()])
+
+    def _key_language(self, key):
+        parts = key.split("#")
+        return parts[3] if len(parts) > 3 else settings.LANGUAGE_CODE
 
     def _state_tag(self, permission, timestamp):
         if permission in PRIVILEGED_PERMISSIONS:
@@ -149,8 +154,8 @@ class CzecieCampRankingController(DefaultRankingController):
         main_label = dict(CzecieCampConfig.DAILY_WEIGHT_CHOICES)[config.daily_weight]
         rankings = [
             (MAIN_KEY, main_label),
-            (STALE_KEY, _("Stałe")),
-            (DAILY_KEY, _("Dzienne")),
+            (STALE_KEY, _("All-time")),
+            (DAILY_KEY, _("Daily")),
         ]
         return rankings + [(str(r.id), r.name) for r in rounds]
 
@@ -280,17 +285,18 @@ class CzecieCampRankingController(DefaultRankingController):
     def _render_ranking_page(self, key, data, page):
         request = self._fake_request(page)
         data["is_admin"] = self.is_admin_key(key)
-        return render_to_string("czeciecamp/ranking.html", context=data, request=request)
+        with translation.override(self._key_language(key)):
+            return render_to_string("czeciecamp/ranking.html", context=data, request=request)
 
     def _get_csv_header(self, key, data):
         header = [_("No."), _("Login"), _("First name"), _("Last name"), _("Sum")]
         if data["is_main"]:
-            header += [_("Dzienne"), _("Stałe")]
+            header += [_("Daily"), _("All-time")]
         for pi, _statement_visible in data["problem_instances"]:
             if data["is_main"]:
                 header += [
-                    "{} ({})".format(pi.get_short_name_display(), _("Dzienne")),
-                    "{} ({})".format(pi.get_short_name_display(), _("Stałe")),
+                    "{} ({})".format(pi.get_short_name_display(), _("Daily")),
+                    "{} ({})".format(pi.get_short_name_display(), _("All-time")),
                 ]
             else:
                 header.append(pi.get_short_name_display())

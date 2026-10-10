@@ -279,7 +279,7 @@ class TestCampPanel(CampTestCase):
             response = self.client.get(self._url("czeciecamp_panel"))
         form = response.context["new_round_form"]
         self.assertEqual(form.initial["start_date"], datetime(2020, 8, 10, 9, 45, tzinfo=UTC))
-        self.assertEqual(form.initial["name"], "Dzień 3")
+        self.assertEqual(form.initial["name"], "Day 3")
 
     def test_add_round(self):
         self.assertTrue(self.client.login(username="test_admin"))
@@ -351,7 +351,7 @@ class TestCampPanel(CampTestCase):
         self.assertTrue(self.client.login(username="test_user"))
         response = self.client.get(self._url("default_ranking"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Dzienne + Stałe")
+        self.assertContains(response, "Daily + All-time")
 
 
 class TestCreateCamp(TestCase):
@@ -378,7 +378,7 @@ class TestCreateCamp(TestCase):
         self.assertTrue(config.results_visible_during_round)
         self.assertEqual(contest.default_submissions_limit, 25)
         rounds = list(contest.round_set.order_by("start_date"))
-        self.assertEqual([r.name for r in rounds], ["Dzień 0", "Dzień 1", "Dzień 2", "Dzień 3"])
+        self.assertEqual([r.name for r in rounds], ["Day 0", "Day 1", "Day 2", "Day 3"])
         self.assertTrue(rounds[0].is_trial)
         self.assertEqual(rounds[0].start_date, timezone.make_aware(datetime(2026, 8, 3, 20, 0)))
         self.assertEqual(rounds[3].start_date, timezone.make_aware(datetime(2026, 8, 6, 20, 0)))

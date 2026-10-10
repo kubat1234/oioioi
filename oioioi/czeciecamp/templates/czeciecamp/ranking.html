@@ -2,7 +2,7 @@
 
 {% if frozen_at %}
     <div class="alert alert-info">
-        {% blocktrans with date=frozen_at|date:"Y-m-d H:i" %}The ranking is frozen. Stałe counts submissions sent until {{ date }}.{% endblocktrans %}
+        {% blocktrans with date=frozen_at|date:"Y-m-d H:i" %}The ranking is frozen. All-time counts submissions sent until {{ date }}.{% endblocktrans %}
     </div>
 {% elif frozen_for_participants %}
     <div class="alert alert-warning">
@@ -50,7 +50,7 @@
                                 {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
                                 {% if is_main %}
                                     {% if cell.daily is not None or cell.stale is not None %}
-                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Dzienne" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "Stałe" %}: 1×{{ cell.stale|default_if_none:0 }} = {{ cell.stale|default_if_none:0 }}</span></div>
+                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Daily" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "All-time" %}: 1×{{ cell.stale|default_if_none:0 }} = {{ cell.stale|default_if_none:0 }}</span></div>
                                     {% endif %}
                                 {% else %}
                                     {{ cell.value|default_if_none:'' }}

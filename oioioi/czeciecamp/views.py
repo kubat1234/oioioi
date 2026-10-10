@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 
@@ -56,11 +57,16 @@ def rounded_down(now):
     return rounded - timedelta(minutes=rounded.minute % 5)
 
 
+def day_name(number):
+    """Name of a camp round, in the language of the admin who creates it."""
+    return gettext("Day %(number)d") % {"number": number}
+
+
 def _next_round_name(contest):
     number = contest.round_set.filter(is_trial=False).count() + 1
-    while contest.round_set.filter(name=f"Dzień {number}").exists():
+    while contest.round_set.filter(name=day_name(number)).exists():
         number += 1
-    return f"Dzień {number}"
+    return day_name(number)
 
 
 def _round_rows(contest, now):
@@ -86,7 +92,7 @@ def _report_form_errors(request, form, title=""):
 
 
 @contest_admin_menu_registry.register_decorator(
-    _("Camp panel"),
+    _("Czecie panel"),
     lambda request: _panel_url(request.contest),
     condition=is_czecie_camp,
     order=1,
@@ -285,11 +291,11 @@ def create_camp_view(request):
                     "daily_weight": data["daily_weight"],
                 },
             )
-            # Dzień 0 is the trial round; its results are visible right away.
-            Round.objects.create(contest=contest, name="Dzień 0", start_date=start, end_date=start, results_date=start, is_trial=True)
+            # Day 0 is the trial round; its results are visible right away.
+            Round.objects.create(contest=contest, name=day_name(0), start_date=start, end_date=start, results_date=start, is_trial=True)
             for day in range(1, data["days"] + 1):
                 day_start = start + timedelta(days=day)
-                Round.objects.create(contest=contest, name=f"Dzień {day}", start_date=day_start, end_date=day_start)
+                Round.objects.create(contest=contest, name=day_name(day), start_date=day_start, end_date=day_start)
         messages.success(request, _("Camp created. Set the round times and add problems and participants below."))
         return redirect(_panel_url(contest))
     return TemplateResponse(request, "czeciecamp/create.html", {"form": form})

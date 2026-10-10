@@ -125,13 +125,13 @@ class CreateCampForm(BootstrapFormMixin, forms.Form):
         validators=[validate_db_string_id],
         help_text=_("Used in URLs. Filled in from the name."),
     )
-    start_date = DateTimeLocalField(label=_("Start (Dzień 0)"))
+    start_date = DateTimeLocalField(label=_("Start (Day 0)"))
     days = forms.IntegerField(
         min_value=0,
         max_value=MAX_CAMP_DAYS,
         initial=5,
-        label=_("Number of rounds after Dzień 0"),
-        help_text=_("Dzień 1, Dzień 2, ... one per day after Dzień 0."),
+        label=_("Number of days after Day 0"),
+        help_text=_("Day 1, Day 2, ... one round per day after Day 0."),
     )
     results_visible_during_round = forms.BooleanField(
         required=False,
