@@ -1,5 +1,5 @@
 {% extends "simple-centered-wide.html" %}
-{% load i18n mptt_tags portal_url compress static %}
+{% load i18n mptt_tags portal_url compress simple_tags static %}
 
 {% block title %}{% trans "Manage portal" %}{% endblock %}
 
@@ -13,7 +13,7 @@
 
 {% block scripts %}
     {{ block.super }}
-    <script src="{% static 'portal_tree.bundle.js' %}"></script>
+    <script src="{% bundle_static 'portal_tree.bundle.js' %}"></script>
     <script>
         $(function() {
             init_portal_tree('{% portal_url portal=portal path='__PATH__' %}', '{% url 'move_node' %}');

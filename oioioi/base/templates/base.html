@@ -4,7 +4,7 @@
 {% site_displayed_tag %}
 <html lang="{{ LANGUAGE_CODE|default:"en" }}" {% if LANGUAGE_BIDI %}dir="rtl"{% endif %}>
     <head>
-    <script src="{% static 'darkreader.bundle.js' %}"></script>
+    <script src="{% bundle_static 'darkreader.bundle.js' %}"></script>
     
     {% block head %}
         <title>{% block title %}{% trans "Main page" %}{% endblock %} - {{ site_name }}</title>
@@ -16,7 +16,7 @@
         {% comment %}
         Load jQuery here because inlined scripts in some views depends on it.
         {% endcomment %}
-        <script src="{% static 'jquery.bundle.js' %}"></script>
+        <script src="{% bundle_static 'jquery.bundle.js' %}"></script>
 
         {% compress js %}
             {% common_scripts %}
@@ -115,7 +115,7 @@
         {% block scripts %}
             <script>const oioioi_base_url = "{{ base_url | escapejs }}";</script>
             <script src="{% url 'javascript_catalog' %}"></script>
-            <script src="{% static 'index.bundle.js' %}"></script>
+            <script src="{% bundle_static 'index.bundle.js' %}"></script>
             <script>
                 window.MathJax = {
                     tex: {

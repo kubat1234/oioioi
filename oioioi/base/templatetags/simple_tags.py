@@ -1,5 +1,9 @@
+import os
+
 from django import template
 from django.contrib.admin.views.main import PAGE_VAR
+from django.contrib.staticfiles import finders
+from django.templatetags.static import static
 from django.urls import NoReverseMatch, reverse
 from django.utils.html import format_html
 
@@ -31,6 +35,20 @@ def active_url(context, pattern_or_urlname, returned_class="active"):
     if pattern == path:
         return returned_class
     return ""
+
+
+@register.simple_tag
+def bundle_static(path):
+    """Like ``{% static %}``, but adds the file's modification time to the URL.
+
+    Webpack bundles have fixed names, so without it browsers keep using
+    a cached old bundle after it is rebuilt.
+    """
+    url = static(path)
+    found = finders.find(path)
+    if found:
+        url += f"?v={int(os.path.getmtime(found))}"
+    return url
 
 
 @register.simple_tag(takes_context=True)

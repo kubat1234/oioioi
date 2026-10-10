@@ -1,5 +1,5 @@
 {% extends "base-with-menu.html" %}
-{% load i18n compress static %}
+{% load i18n compress simple_tags static %}
 
 {% block styles %}
 {{ block.super }}
@@ -11,7 +11,7 @@
 
 {% block scripts %}
 {{ block.super }}
-<script src="{% static 'timeline.bundle.js' %}"></script>
+<script src="{% bundle_static 'timeline.bundle.js' %}"></script>
 {% endblock %}
 
 {% block title %}{% trans "Timeline" %}{% endblock %}
