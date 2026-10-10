@@ -283,6 +283,8 @@ def create_camp_view(request):
                 name=data["name"],
                 controller_name=CONTROLLER_NAME,
                 default_submissions_limit=CAMP_SUBMISSIONS_LIMIT,
+                # The generic rules page does not describe camp rankings correctly.
+                show_contest_rules=False,
             )
             CzecieCampConfig.objects.update_or_create(
                 contest=contest,

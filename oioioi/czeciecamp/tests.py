@@ -377,6 +377,7 @@ class TestCreateCamp(TestCase):
         self.assertEqual(config.daily_weight, 2)
         self.assertTrue(config.results_visible_during_round)
         self.assertEqual(contest.default_submissions_limit, 25)
+        self.assertFalse(contest.show_contest_rules)
         rounds = list(contest.round_set.order_by("start_date"))
         self.assertEqual([r.name for r in rounds], ["Day 0", "Day 1", "Day 2", "Day 3"])
         self.assertTrue(rounds[0].is_trial)
