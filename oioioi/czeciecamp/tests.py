@@ -14,6 +14,7 @@ from oioioi.czeciecamp.models import get_camp_config, ordered_rounds
 from oioioi.czeciecamp.views import rounded_down, rounded_now
 from oioioi.participants.models import Participant
 from oioioi.problems.models import Problem
+from oioioi.rankings.models import Ranking
 
 CONTROLLER = "oioioi.czeciecamp.controllers.CzecieCampContestController"
 T0 = datetime(2020, 8, 1, 9, 0, tzinfo=UTC)
@@ -119,6 +120,15 @@ class TestCampRankings(CampTestCase):
     def test_ignored_submissions_do_not_count(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 100, kind="IGNORED")
         self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 0)
+
+    def test_participant_status_invalidates_rankings(self):
+        ranking = Ranking.objects.create(contest=self.contest, key="regular#main#test", needs_recalculation=False)
+        participant = Participant.objects.get(contest=self.contest, user=self.user1)
+        participant.status = "BANNED"
+        participant.save()
+        ranking.refresh_from_db()
+        self.assertTrue(ranking.needs_recalculation)
+        self.assertNotIn(self.user1, [row["user"] for row in self._ranking(MAIN_KEY)["rows"]])
 
     def test_only_participants_and_shared_places(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 70)

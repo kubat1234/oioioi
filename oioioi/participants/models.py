@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
+from django.db.models.signals import post_delete, post_save
+from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.base.fields import EnumField, EnumRegistry
@@ -8,6 +10,7 @@ from oioioi.base.utils.deps import check_django_app_dependencies
 from oioioi.base.utils.validators import validate_db_string_id
 from oioioi.contests.models import Contest
 from oioioi.participants.fields import OneToOneBothHandsCascadingParticipantField
+from oioioi.rankings.models import Ranking
 
 check_django_app_dependencies(__name__, ["oioioi.contestexcl"])
 
@@ -58,6 +61,13 @@ class Participant(models.Model):
         self.status = "DELETED"
         self.anonymous = True
         self.save()
+
+
+@receiver(post_save, sender=Participant)
+@receiver(post_delete, sender=Participant)
+def _invalidate_rankings(sender, instance, **kwargs):
+    """Rankings show only active participants."""
+    Ranking.invalidate_queryset(Ranking.objects.filter(contest_id=instance.contest_id))
 
 
 class Region(models.Model):

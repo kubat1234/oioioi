@@ -31,6 +31,7 @@ from oioioi.participants.utils import (
     contest_is_onsite,
     has_participants_admin,
 )
+from oioioi.rankings.models import Ranking
 
 
 class ParticipantAdmin(admin.ModelAdmin):
@@ -118,12 +119,15 @@ class ParticipantAdmin(admin.ModelAdmin):
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def make_active(self, request, queryset):
+        # update() sends no signals, so the rankings are invalidated here.
         queryset.update(status="ACTIVE")
+        Ranking.invalidate_queryset(Ranking.objects.filter(contest_id__in=list(queryset.values_list("contest_id", flat=True))))
 
     make_active.short_description = _("Mark selected participants as active")
 
     def make_banned(self, request, queryset):
         queryset.update(status="BANNED")
+        Ranking.invalidate_queryset(Ranking.objects.filter(contest_id__in=list(queryset.values_list("contest_id", flat=True))))
 
     make_banned.short_description = _("Mark selected participants as banned")
 
