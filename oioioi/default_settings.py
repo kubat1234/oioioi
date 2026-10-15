@@ -166,6 +166,9 @@ CACHED_TEMPLATE_LOADERS = (
 # Set to True to show the link to the problemset with contests on navbar.
 PROBLEMSET_LINK_VISIBLE = True
 
+# Set to True to show the link to the task archive on navbar.
+TASK_ARCHIVE_LINK_VISIBLE = False
+
 # Set to true to show tags on the list of problems
 PROBLEM_TAGS_VISIBLE = False
 

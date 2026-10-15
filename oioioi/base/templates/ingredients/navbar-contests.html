@@ -28,7 +28,9 @@
                 {% if is_problemset_link_visible %}
                     <div role="separator" class="dropdown-divider"></div>
                     <a class="dropdown-item" href="{% url 'problemset_main' %}">{% trans "Problemset" %}</a>
-                    <a class="dropdown-item" href="{% url 'task_archive' %}">{% trans "Task archive" %}</a>
+                    {% if is_task_archive_link_visible %}
+                        <a class="dropdown-item" href="{% url 'task_archive' %}">{% trans "Task archive" %}</a>
+                    {% endif %}
                 {% endif %}
                 {% if portals_main_page_link_visible  %}
                     <div role="separator" class="dropdown-divider"></div>

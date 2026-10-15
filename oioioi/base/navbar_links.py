@@ -3,6 +3,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.base.menu import navbar_links_registry
+from oioioi.base.permissions import make_request_condition
 from oioioi.contests.current_contest import ContestMode
 
 if settings.CONTEST_MODE == ContestMode.neutral:
@@ -20,9 +21,16 @@ navbar_links_registry.register(
     order=200,
 )
 
+
+@make_request_condition
+def is_task_archive_link_visible(request):
+    return settings.TASK_ARCHIVE_LINK_VISIBLE
+
+
 navbar_links_registry.register(
     name="task_archive",
     text=_("Task archive"),
     url_generator=lambda request: reverse("task_archive"),
+    condition=is_task_archive_link_visible,
     order=300,
 )

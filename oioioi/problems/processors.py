@@ -43,7 +43,10 @@ def dangling_problems_processor(request):
 
 
 def problemset_link_visible_processor(request):
-    return {"is_problemset_link_visible": settings.PROBLEMSET_LINK_VISIBLE}
+    return {
+        "is_problemset_link_visible": settings.PROBLEMSET_LINK_VISIBLE,
+        "is_task_archive_link_visible": settings.TASK_ARCHIVE_LINK_VISIBLE,
+    }
 
 
 def problems_need_rejudge_processor(request):

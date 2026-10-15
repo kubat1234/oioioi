@@ -26,6 +26,12 @@ class TestMainPageView(TestCase):
         unregister_main_page_view(welcome_page_view)
 
     @override_settings(CONTEST_MODE=ContestMode.neutral)
+    def test_task_archive_link_hidden_by_default(self):
+        response = self.client.get("/", follow=True)
+        self.assertContains(response, 'href="/problemset/"')
+        self.assertNotContains(response, 'href="/task_archive/"')
+
+    @override_settings(CONTEST_MODE=ContestMode.neutral, TASK_ARCHIVE_LINK_VISIBLE=True)
     def test_navbar_links(self):
         try:
             response = self.client.get("/", follow=True)
@@ -39,7 +45,7 @@ class TestMainPageView(TestCase):
         self.assertContains(response, 'href="/task_archive/"')
 
     # Regression test for SIO-2278
-    @override_settings(CONTEST_MODE=ContestMode.neutral)
+    @override_settings(CONTEST_MODE=ContestMode.neutral, TASK_ARCHIVE_LINK_VISIBLE=True)
     def test_navbar_links_translation(self):
         response = self.client.get(reverse("problemset_main"), follow=True, headers={"accept-language": "en"})
 
@@ -60,7 +66,7 @@ class TestMainPageView(TestCase):
 
         self.assertContains(response, 'class="szkopul-logo"')
 
-    @override_settings(CONTEST_MODE=ContestMode.neutral)
+    @override_settings(CONTEST_MODE=ContestMode.neutral, TASK_ARCHIVE_LINK_VISIBLE=True)
     def test_logged_user(self):
         self.assertTrue(self.client.login(username="test_user"))
         response = self.client.get("/", follow=True)
