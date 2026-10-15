@@ -8,5 +8,9 @@ function init_user_selection(id, num_hints) {
             items: num_hints,
             minLength: 2
         });
+        // Picking a hint inside a dropdown (e.g. the su form) must not close it.
+        input.data("typeahead").$menu.on("click", function(event) {
+            event.stopPropagation();
+        });
     });
 }
