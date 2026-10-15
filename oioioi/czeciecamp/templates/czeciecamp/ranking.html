@@ -50,7 +50,7 @@
                                 {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
                                 {% if is_main %}
                                     {% if cell.daily is not None or cell.stale is not None %}
-                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Daily" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "All-time" %}: 1×{{ cell.stale|default_if_none:0 }} = {{ cell.stale|default_if_none:0 }}</span></div>
+                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Daily" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "All-time" %}: {{ stale_weight }}×{{ cell.stale|default_if_none:0 }} = {{ cell.weighted_stale }}</span></div>
                                     {% endif %}
                                 {% else %}
                                     {{ cell.value|default_if_none:'' }}

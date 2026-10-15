@@ -1,12 +1,13 @@
 from django import forms
 from django.contrib.auth.models import User
 from django.db.models import Q
-from django.utils.text import slugify
+from django.utils.text import capfirst, slugify
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import pgettext_lazy
 
 from oioioi.base.utils.validators import validate_db_string_id
 from oioioi.contests.models import Contest, Round
-from oioioi.czeciecamp.models import CzecieCampConfig
+from oioioi.czeciecamp.models import CzecieCampConfig, check_weights
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M"
 
@@ -41,7 +42,7 @@ class CampSettingsForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = CzecieCampConfig
-        fields = ["counting_end_date", "daily_weight", "results_visible_during_round"]
+        fields = ["counting_end_date", "daily_weight", "stale_weight", "results_visible_during_round"]
 
 
 class RoundForm(BootstrapFormMixin, forms.ModelForm):
@@ -53,13 +54,21 @@ class RoundForm(BootstrapFormMixin, forms.ModelForm):
 
     start_date = DateTimeLocalField(label=_("Start"))
     end_date = DateTimeLocalField(label=_("End"), required=False)
+    # An "All-time" round is stored as a trial round.
+    is_trial = forms.TypedChoiceField(
+        choices=[(False, pgettext_lazy("round type", "Daily")), (True, pgettext_lazy("round type", "All-time"))],
+        coerce=lambda value: value == "True",
+        label=_("Type"),
+    )
+    counted = forms.BooleanField(required=False, initial=True, label=_("Counted"))
 
     class Meta:
         model = Round
         fields = ["name", "start_date", "end_date", "is_trial"]
 
-    def __init__(self, *args, html_form=None, **kwargs):
+    def __init__(self, *args, html_form=None, counted=True, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["counted"].initial = counted
         if html_form:
             for field in self.fields.values():
                 field.widget.attrs["form"] = html_form
@@ -138,15 +147,25 @@ class CreateCampForm(BootstrapFormMixin, forms.Form):
         label=CzecieCampConfig._meta.get_field("results_visible_during_round").verbose_name,
         help_text=CzecieCampConfig._meta.get_field("results_visible_during_round").help_text,
     )
-    daily_weight = forms.TypedChoiceField(
-        choices=CzecieCampConfig.DAILY_WEIGHT_CHOICES,
-        coerce=int,
+    daily_weight = forms.IntegerField(
+        min_value=0,
         initial=1,
-        label=_("Main ranking"),
+        label=capfirst(CzecieCampConfig._meta.get_field("daily_weight").verbose_name),
+        help_text=CzecieCampConfig._meta.get_field("daily_weight").help_text,
+    )
+    stale_weight = forms.IntegerField(
+        min_value=0,
+        initial=1,
+        label=capfirst(CzecieCampConfig._meta.get_field("stale_weight").verbose_name),
     )
 
     def clean(self):
         cleaned_data = super().clean()
+        if cleaned_data.get("daily_weight") is not None and cleaned_data.get("stale_weight") is not None:
+            try:
+                check_weights(cleaned_data["daily_weight"], cleaned_data["stale_weight"])
+            except forms.ValidationError as error:
+                self.add_error(None, error)
         if "contest_id" in self.errors or not cleaned_data.get("name"):
             return cleaned_data
         contest_id = cleaned_data.get("contest_id") or make_contest_id(cleaned_data["name"])

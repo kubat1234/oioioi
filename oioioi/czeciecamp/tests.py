@@ -150,14 +150,56 @@ class TestCampRankings(CampTestCase):
         self.assertEqual(self._row(self._ranking(MAIN_KEY), self.user1)["sum"], 0)
         self.assertEqual(self._row(self._ranking(MAIN_KEY, "admin"), self.user1)["sum"], 200)
 
-    def test_available_rankings_order(self):
+    def _available_rankings(self):
         request = RequestFactory().get("/")
         request.user = self.user1
         request.contest = self.contest
         request.timestamp = _date(10)
-        keys = [key for key, _name in self.rcontroller.available_rankings(request)]
+        return self.rcontroller.available_rankings(request)
+
+    def test_available_rankings_order(self):
+        keys = [key for key, _name in self._available_rankings()]
         expected = [MAIN_KEY, STALE_KEY, DAILY_KEY, str(self.trial.id), str(self.round1.id), str(self.round2.id)]
         self.assertEqual(keys, expected)
+
+    def test_weights(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi1, _date(1, hour=7), 100)
+        config = get_camp_config(self.contest)
+        config.daily_weight, config.stale_weight = 2, 3
+        config.save()
+        data = self._ranking(MAIN_KEY)
+        self.assertEqual(self._row(data, self.user1)["sum"], 2 * 50 + 3 * 100)
+        cell = self._row(data, self.user1)["cells"][[pi for pi, _visible in data["problem_instances"]].index(self.pi1)]
+        self.assertEqual((cell["weighted_daily"], cell["weighted_stale"], cell["value"]), (100, 300, 400))
+
+    def test_main_ranking_label(self):
+        config = get_camp_config(self.contest)
+        for daily, stale, label in [(1, 1, "Daily + All-time"), (2, 1, "2 × Daily + All-time"), (3, 2, "3 × Daily + 2 × All-time")]:
+            config.daily_weight, config.stale_weight = daily, stale
+            self.assertEqual(config.main_ranking_label(), label)
+
+    def test_zero_weight_makes_the_other_ranking_main(self):
+        config = get_camp_config(self.contest)
+        config.daily_weight, config.stale_weight = 0, 2
+        config.save()
+        self.assertEqual([key for key, _name in self._available_rankings()][:3], [STALE_KEY, DAILY_KEY, str(self.trial.id)])
+        config.daily_weight, config.stale_weight = 1, 0
+        config.save()
+        self.assertEqual([key for key, _name in self._available_rankings()][:3], [DAILY_KEY, STALE_KEY, str(self.trial.id)])
+
+    def test_round_not_counted(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi2, _date(2, hour=1), 70)
+        config = get_camp_config(self.contest)
+        config.excluded_rounds = [self.round2.id]
+        config.save()
+        for key in (MAIN_KEY, STALE_KEY, DAILY_KEY):
+            data = self._ranking(key)
+            self.assertNotIn(self.pi2, [pi for pi, _visible in data["problem_instances"]])
+        self.assertEqual(self._row(self._ranking(DAILY_KEY), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(str(self.round2.id)), self.user1)["sum"], 70)
+        self.assertIn(str(self.round2.id), [key for key, _name in self._available_rankings()])
 
 
 class TestCampFreeze(CampTestCase):
@@ -267,10 +309,10 @@ class TestCampPanel(CampTestCase):
         self.client.post(self._url("czeciecamp_panel"), {"action": "participants", "users": "test_user3\n"})
         self.assertTrue(Participant.objects.filter(contest=self.contest, user=self.outsider).exists())
 
-    def _round_data(self, prefix, name, start, end="", is_trial=False):
-        data = {f"{prefix}-name": name, f"{prefix}-start_date": start, f"{prefix}-end_date": end}
-        if is_trial:
-            data[f"{prefix}-is_trial"] = "on"
+    def _round_data(self, prefix, name, start, end="", is_trial=False, counted=True):
+        data = {f"{prefix}-name": name, f"{prefix}-start_date": start, f"{prefix}-end_date": end, f"{prefix}-is_trial": str(is_trial)}
+        if counted:
+            data[f"{prefix}-counted"] = "on"
         return data
 
     def test_panel_defaults_new_round_to_rounded_now(self):
@@ -292,6 +334,35 @@ class TestCampPanel(CampTestCase):
         self.assertEqual(new_round.end_date, timezone.make_aware(datetime(2020, 8, 4, 14, 0)))
         self.assertTrue(new_round.is_trial)
         self.assertEqual(new_round.results_date, new_round.start_date)
+        self.assertNotIn(new_round.id, get_camp_config(self.contest).excluded_rounds)
+
+    def test_add_round_not_counted(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        self.client.post(self._url("czeciecamp_add_round"), self._round_data("new", "Extra", "2020-08-04T09:00", "2020-08-04T14:00", counted=False))
+        new_round = Round.objects.get(contest=self.contest, name="Extra")
+        self.assertFalse(new_round.is_trial)
+        self.assertEqual(get_camp_config(self.contest).excluded_rounds, [new_round.id])
+
+    def test_save_rounds_counted(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = self._all_rounds_data([self.trial, self.round1, self.round2])
+        data.pop(f"r{self.round1.id}-counted")
+        self.client.post(self._url("czeciecamp_save_rounds"), data)
+        self.assertEqual(get_camp_config(self.contest).excluded_rounds, [self.round1.id])
+        data[f"r{self.round1.id}-counted"] = "on"
+        self.client.post(self._url("czeciecamp_save_rounds"), data)
+        self.assertEqual(get_camp_config(self.contest).excluded_rounds, [])
+
+    def test_settings_reject_zero_weights(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = {"action": "settings", "counting_end_date": "", "daily_weight": 0, "stale_weight": 0}
+        response = self.client.post(self._url("czeciecamp_panel"), data)
+        self.assertContains(response, "At least one weight must be greater than 0.")
+        self.assertEqual(get_camp_config(self.contest).daily_weight, 1)
+        data.update(daily_weight=3, stale_weight=0)
+        self.client.post(self._url("czeciecamp_panel"), data)
+        config = get_camp_config(self.contest)
+        self.assertEqual((config.daily_weight, config.stale_weight), (3, 0))
 
     def test_add_round_validation(self):
         self.assertTrue(self.client.login(username="test_admin"))
@@ -368,13 +439,14 @@ class TestCreateCamp(TestCase):
                 "days": 3,
                 "results_visible_during_round": "on",
                 "daily_weight": 2,
+                "stale_weight": 3,
             },
         )
         contest = Contest.objects.get(id="oboz-lodz-2026")
         self.assertRedirects(response, reverse("czeciecamp_panel", kwargs={"contest_id": "oboz-lodz-2026"}))
         self.assertEqual(contest.controller_name, CONTROLLER)
         config = get_camp_config(contest)
-        self.assertEqual(config.daily_weight, 2)
+        self.assertEqual((config.daily_weight, config.stale_weight), (2, 3))
         self.assertTrue(config.results_visible_during_round)
         self.assertEqual(contest.default_submissions_limit, 25)
         self.assertFalse(contest.show_contest_rules)
@@ -386,9 +458,16 @@ class TestCreateCamp(TestCase):
 
     def test_create_limits_days(self):
         self.assertTrue(self.client.login(username="test_admin"))
-        data = {"name": "Duży", "start_date": "2026-08-03T20:00", "days": 1000, "daily_weight": 1}
+        data = {"name": "Duży", "start_date": "2026-08-03T20:00", "days": 1000, "daily_weight": 1, "stale_weight": 1}
         self.client.post(reverse("czeciecamp_create"), data)
         self.assertFalse(Contest.objects.filter(id="duzy").exists())
+
+    def test_create_rejects_zero_weights(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = {"name": "Zero", "start_date": "2026-08-03T20:00", "days": 1, "daily_weight": 0, "stale_weight": 0}
+        response = self.client.post(reverse("czeciecamp_create"), data)
+        self.assertContains(response, "At least one weight must be greater than 0.")
+        self.assertFalse(Contest.objects.filter(id="zero").exists())
 
     def test_create_default_start(self):
         self.assertTrue(self.client.login(username="test_admin"))

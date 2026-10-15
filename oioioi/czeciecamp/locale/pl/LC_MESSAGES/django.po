@@ -38,9 +38,6 @@ msgstr "Liczba dni po Dniu 0"
 msgid "Day 1, Day 2, ... one round per day after Day 0."
 msgstr "Dzień 1, Dzień 2, ... jedna runda na każdy dzień po Dniu 0."
 
-msgid "Main ranking"
-msgstr "Ranking główny"
-
 msgid "Enter an ID."
 msgstr "Podaj ID."
 
@@ -113,12 +110,6 @@ msgstr "Nazwisko"
 msgid "Sum"
 msgstr "Suma"
 
-msgid "Daily + All-time"
-msgstr "Dzienne + Stałe"
-
-msgid "2 × Daily + All-time"
-msgstr "2 × Dzienne + Stałe"
-
 msgid "contest"
 msgstr "konkurs"
 
@@ -127,9 +118,6 @@ msgstr "koniec liczenia"
 
 msgid "Submissions sent after this moment are still judged, but they do not count in any ranking. Empty means no limit."
 msgstr "Zgłoszenia wysłane po tej chwili są nadal oceniane, ale nie liczą się do żadnego rankingu. Puste oznacza brak limitu."
-
-msgid "main ranking"
-msgstr "ranking główny"
 
 msgid "results visible during rounds"
 msgstr "wyniki widoczne w trakcie rund"
@@ -185,9 +173,6 @@ msgstr "Rankingi"
 
 msgid "Rounds"
 msgstr "Rundy"
-
-msgid "Trial"
-msgstr "Próbna"
 
 msgid "Results"
 msgstr "Wyniki"
@@ -266,3 +251,35 @@ msgstr "Rankingi zamrożą się dla uczestników o %(date)s."
 
 msgid "Create"
 msgstr "Utwórz"
+
+msgctxt "round type"
+msgid "Daily"
+msgstr "Dzienna"
+
+msgctxt "round type"
+msgid "All-time"
+msgstr "Stała"
+
+msgid "Type"
+msgstr "Typ"
+
+msgid "Counted"
+msgstr "Liczona"
+
+msgid "Counted in the Daily, All-time and main rankings."
+msgstr "Liczy się do rankingów Dzienne, Stałe i głównego."
+
+msgid "daily ranking weight"
+msgstr "waga rankingu dziennego"
+
+msgid "all-time ranking weight"
+msgstr "waga rankingu stałego"
+
+msgid "Main ranking = daily weight × Daily + all-time weight × All-time. If one weight is 0, the other ranking is the main one."
+msgstr "Ranking główny = waga dzienna × Dzienne + waga stała × Stałe. Gdy jedna waga to 0, głównym rankingiem jest drugi."
+
+msgid "At least one weight must be greater than 0."
+msgstr "Co najmniej jedna waga musi być większa od 0."
+
+msgid "rounds not counted"
+msgstr "rundy nieliczone"

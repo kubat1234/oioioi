@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -9,8 +10,6 @@ check_django_app_dependencies(__name__, ["oioioi.participants"])
 
 class CzecieCampConfig(models.Model):
     """Per-camp settings of a Czecie Camp Contest."""
-
-    DAILY_WEIGHT_CHOICES = [(1, _("Daily + All-time")), (2, _("2 × Daily + All-time"))]
 
     contest = models.OneToOneField(
         Contest,
@@ -24,11 +23,12 @@ class CzecieCampConfig(models.Model):
         verbose_name=_("counting end"),
         help_text=_("Submissions sent after this moment are still judged, but they do not count in any ranking. Empty means no limit."),
     )
-    daily_weight = models.IntegerField(
-        choices=DAILY_WEIGHT_CHOICES,
+    daily_weight = models.PositiveIntegerField(
         default=1,
-        verbose_name=_("main ranking"),
+        verbose_name=_("daily ranking weight"),
+        help_text=_("Main ranking = daily weight × Daily + all-time weight × All-time. If one weight is 0, the other ranking is the main one."),
     )
+    stale_weight = models.PositiveIntegerField(default=1, verbose_name=_("all-time ranking weight"))
     results_visible_during_round = models.BooleanField(
         default=False,
         verbose_name=_("results visible during rounds"),
@@ -48,6 +48,9 @@ class CzecieCampConfig(models.Model):
     # Round ids in the order set in the camp panel. Rounds missing from the
     # list (e.g. added in the admin) go last, by start date.
     round_order = models.JSONField(default=list, blank=True, verbose_name=_("round order"))
+    # Ids of rounds left out of the Daily, All-time and main rankings.
+    # They still have their own ranking.
+    excluded_rounds = models.JSONField(default=list, blank=True, verbose_name=_("rounds not counted"))
 
     class Meta:
         verbose_name = _("Czecie camp config")
@@ -55,6 +58,27 @@ class CzecieCampConfig(models.Model):
 
     def __str__(self):
         return str(self.contest)
+
+    def clean(self):
+        super().clean()
+        check_weights(self.daily_weight, self.stale_weight)
+
+    def has_main_ranking(self):
+        """With one weight 0 there is no combined ranking, the other one is the main one."""
+        return bool(self.daily_weight and self.stale_weight)
+
+    def main_ranking_label(self):
+        """E.g. "Daily + All-time" or "2 × Daily + 3 × All-time"; a weight of 1 is not written."""
+        parts = []
+        for weight, name in ((self.daily_weight, _("Daily")), (self.stale_weight, _("All-time"))):
+            if weight:
+                parts.append(str(name) if weight == 1 else f"{weight} × {name}")
+        return " + ".join(parts)
+
+
+def check_weights(daily_weight, stale_weight):
+    if daily_weight == 0 and stale_weight == 0:
+        raise ValidationError(_("At least one weight must be greater than 0."))
 
 
 def get_camp_config(contest):

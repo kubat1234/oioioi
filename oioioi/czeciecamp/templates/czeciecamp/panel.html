@@ -8,6 +8,7 @@
 <style>
     .camp-rounds input[type="text"] { min-width: 9rem; }
     .camp-rounds input[type="datetime-local"] { min-width: 12rem; }
+    .camp-weight input { width: 6rem; }
 </style>
 {% endblock %}
 
@@ -30,7 +31,8 @@
             <th>{% trans "Name" %}</th>
             <th>{% trans "Start" %}</th>
             <th>{% trans "End" %}</th>
-            <th>{% trans "Trial" %}</th>
+            <th>{% trans "Type" %}</th>
+            <th title="{% trans 'Counted in the Daily, All-time and main rankings.' %}">{% trans "Counted" %}</th>
             <th>{% trans "Results" %}</th>
             <th>{% trans "Ranking" %}</th>
             <th></th>
@@ -48,7 +50,8 @@
                 <td>{{ form.name }}</td>
                 <td>{{ form.start_date }}</td>
                 <td>{{ form.end_date }}</td>
-                <td class="text-center">{{ form.is_trial }}</td>
+                <td>{{ form.is_trial }}</td>
+                <td class="text-center">{{ form.counted }}</td>
                 <td class="text-nowrap">
                     {% if config.results_visible_during_round %}
                     <span class="text-muted small">{% trans "always visible" %}</span>
@@ -87,7 +90,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="8" class="text-muted">{% trans "No rounds yet." %}</td></tr>
+            <tr><td colspan="9" class="text-muted">{% trans "No rounds yet." %}</td></tr>
         {% endfor %}
         {% with form=new_round_form %}
         <tr class="table-light">
@@ -95,7 +98,8 @@
             <td>{{ form.name }}</td>
             <td>{{ form.start_date }}</td>
             <td>{{ form.end_date }}</td>
-            <td class="text-center">{{ form.is_trial }}</td>
+            <td>{{ form.is_trial }}</td>
+            <td class="text-center">{{ form.counted }}</td>
             <td colspan="3">
                 <form method="post" id="new-round-form" action="{% url 'czeciecamp_add_round' contest_id=contest.id %}">
                     {% csrf_token %}
@@ -108,10 +112,10 @@
 </table>
 </div>
 {% if rounds %}
-<form method="post" id="rounds-form" action="{% url 'czeciecamp_save_rounds' contest_id=contest.id %}" class="d-flex align-items-center gap-2">
+<form method="post" id="rounds-form" action="{% url 'czeciecamp_save_rounds' contest_id=contest.id %}" class="d-flex align-items-center gap-2 js-track-changes">
     {% csrf_token %}
     <button type="submit" class="btn btn-primary">{% trans "Save rounds" %}</button>
-    <span class="text-warning small d-none" id="rounds-unsaved">{% trans "Unsaved changes" %}</span>
+    <span class="text-warning small d-none js-unsaved">{% trans "Unsaved changes" %}</span>
 </form>
 {% endif %}
 <script>
@@ -119,12 +123,9 @@
     var form = document.getElementById("rounds-form");
     if (!form) { return; }
     var tbody = document.querySelector(".camp-rounds tbody");
-    var unsaved = document.getElementById("rounds-unsaved");
-    var dirty = false;
 
     function markDirty() {
-        dirty = true;
-        unsaved.classList.remove("d-none");
+        form.dispatchEvent(new Event("change"));
     }
 
     function refreshArrows() {
@@ -149,15 +150,6 @@
         refreshArrows();
     });
 
-    document.querySelectorAll('[form="rounds-form"]').forEach(function (input) {
-        input.addEventListener("change", markDirty);
-    });
-
-    form.addEventListener("submit", function () { dirty = false; });
-    window.addEventListener("beforeunload", function (event) {
-        if (dirty) { event.preventDefault(); event.returnValue = ""; }
-    });
-
     refreshArrows();
 })();
 </script>
@@ -174,7 +166,7 @@
         {% trans "Rankings will freeze for participants at the end of the last round." %}
     {% endif %}
 </p>
-<form method="post" class="row g-2 align-items-end mb-3">
+<form method="post" class="row g-2 align-items-end mb-3 js-track-changes">
     {% csrf_token %}
     <input type="hidden" name="action" value="freeze_date">
     {% with field=freeze_form.freeze_date %}
@@ -182,7 +174,10 @@
         <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
     </div>
-    <div class="col-auto"><button type="submit" class="btn btn-outline-primary">{% trans "Save" %}</button></div>
+    <div class="col-auto d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-outline-primary">{% trans "Save" %}</button>
+        <span class="text-warning small d-none js-unsaved">{% trans "Unsaved changes" %}</span>
+    </div>
     <div class="col-12 form-text">{{ field.help_text }}</div>
     {% endwith %}
 </form>
@@ -199,18 +194,32 @@
 {% endif %}
 
 <h2 class="h4 mt-4">{% trans "Settings" %}</h2>
-<form method="post" class="row g-3">
+<form method="post" class="row g-3 js-track-changes">
     {% csrf_token %}
     <input type="hidden" name="action" value="settings">
-    {% for field in settings_form %}
+    {% if settings_form.non_field_errors %}<div class="col-12">{{ settings_form.non_field_errors }}</div>{% endif %}
+    <div class="col-12 d-flex flex-wrap gap-3">
+        {% for field in settings_form %}{% if field.name == "daily_weight" or field.name == "stale_weight" %}
+            <div class="camp-weight">
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field.errors }}
+                {{ field }}
+            </div>
+        {% endif %}{% endfor %}
+        <div class="form-text w-100 mt-0">{{ settings_form.daily_weight.help_text }}</div>
+    </div>
+    {% for field in settings_form %}{% if field.name != "daily_weight" and field.name != "stale_weight" %}
         <div class="col-md-6">
             <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
             {{ field.errors }}
             {{ field }}
             {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
         </div>
-    {% endfor %}
-    <div class="col-12"><button type="submit" class="btn btn-primary">{% trans "Save" %}</button></div>
+    {% endif %}{% endfor %}
+    <div class="col-12 d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+        <span class="text-warning small d-none js-unsaved">{% trans "Unsaved changes" %}</span>
+    </div>
 </form>
 
 <h2 class="h4 mt-4">{% trans "Participants" %} ({{ participants|length }})</h2>
@@ -228,4 +237,30 @@
         {% for participant in participants %}{{ participant.user.get_full_name|default:participant.user.username }}{% if not forloop.last %}, {% endif %}{% endfor %}
     </p>
 {% endif %}
+<script>
+(function () {
+    // "Unsaved changes" next to the Save button of a form, and a warning
+    // when leaving the page. form.elements also has the inputs that belong
+    // to the form through their form attribute (the rounds table).
+    var dirtyForms = new Set();
+    document.querySelectorAll("form.js-track-changes").forEach(function (form) {
+        function markDirty() {
+            dirtyForms.add(form);
+            form.querySelector(".js-unsaved").classList.remove("d-none");
+        }
+        form.addEventListener("change", markDirty);
+        Array.prototype.forEach.call(form.elements, function (input) {
+            if (input.form === form && !form.contains(input)) {
+                input.addEventListener("change", markDirty);
+                input.addEventListener("input", markDirty);
+            }
+        });
+        form.addEventListener("input", markDirty);
+        form.addEventListener("submit", function () { dirtyForms.delete(form); });
+    });
+    window.addEventListener("beforeunload", function (event) {
+        if (dirtyForms.size) { event.preventDefault(); event.returnValue = ""; }
+    });
+})();
+</script>
 {% endblock %}

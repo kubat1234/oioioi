@@ -69,13 +69,18 @@ def _next_round_name(contest):
     return day_name(number)
 
 
-def _round_rows(contest, now):
+def _round_rows(contest, config, now):
     rows = []
     for round in ordered_rounds(contest):
         rows.append(
             {
                 "round": round,
-                "form": RoundForm(instance=round, prefix=_round_prefix(round), html_form=ROUNDS_FORM_ID),
+                "form": RoundForm(
+                    instance=round,
+                    prefix=_round_prefix(round),
+                    html_form=ROUNDS_FORM_ID,
+                    counted=round.id not in config.excluded_rounds,
+                ),
                 "results_visible": round.results_date is not None and round.results_date <= now,
                 "ranking_visible": round.public_results_date is not None and round.public_results_date <= now,
             }
@@ -145,7 +150,7 @@ def panel_view(request):
         "settings_form": settings_form,
         "participants_form": participants_form,
         "participants": Participant.objects.filter(contest=contest).select_related("user").order_by("user__last_name", "user__first_name"),
-        "rounds": _round_rows(contest, now),
+        "rounds": _round_rows(contest, config, now),
         "new_round_form": RoundForm(
             prefix=NEW_ROUND_PREFIX,
             html_form="new-round-form",
@@ -208,11 +213,13 @@ def add_round_view(request):
     if form.is_valid():
         round = form.save(commit=False)
         if round.is_trial:
-            # Trial round results are visible right away.
+            # Results of an "All-time" round are visible right away.
             round.results_date = round.start_date
         round.save()
         config = get_camp_config(contest)
         config.round_order = [r.id for r in ordered_rounds(contest)]
+        if not form.cleaned_data["counted"]:
+            config.excluded_rounds.append(round.id)
         config.save()
         Ranking.invalidate_contest(contest)
         messages.success(request, _("Added %(name)s.") % {"name": round.name})
@@ -238,9 +245,15 @@ def save_rounds_view(request):
 
     order = [int(i) for i in request.POST.getlist("order") if i.isdigit() and int(i) in rounds]
     with transaction.atomic():
+        config = get_camp_config(contest)
+        excluded = set(config.excluded_rounds)
         for form in forms:
             form.save()
-        config = get_camp_config(contest)
+            if form.cleaned_data["counted"]:
+                excluded.discard(form.instance.id)
+            else:
+                excluded.add(form.instance.id)
+        config.excluded_rounds = sorted(excluded)
         config.round_order = order + [r.id for r in ordered_rounds(contest) if r.id not in order]
         config.save()
     Ranking.invalidate_contest(contest)
@@ -256,6 +269,7 @@ def delete_round_view(request, round_id):
     round.delete()
     config = get_camp_config(request.contest)
     config.round_order = [r for r in config.round_order if r != round_id]
+    config.excluded_rounds = [r for r in config.excluded_rounds if r != round_id]
     config.save()
     Ranking.invalidate_contest(request.contest)
     messages.success(request, _("Deleted %(name)s.") % {"name": name})
@@ -291,9 +305,10 @@ def create_camp_view(request):
                 defaults={
                     "results_visible_during_round": data["results_visible_during_round"],
                     "daily_weight": data["daily_weight"],
+                    "stale_weight": data["stale_weight"],
                 },
             )
-            # Day 0 is the trial round; its results are visible right away.
+            # Day 0 is an "All-time" round; its results are visible right away.
             Round.objects.create(contest=contest, name=day_name(0), start_date=start, end_date=start, results_date=start, is_trial=True)
             for day in range(1, data["days"] + 1):
                 day_start = start + timedelta(days=day)
