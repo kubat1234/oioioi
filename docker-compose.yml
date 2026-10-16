@@ -1,56 +1,66 @@
+# Production setup of the Czecie camp SIO2 server.
+# Server-specific values (data directory, port, passwords) come from .env,
+# see .env.example. For local development use docker-compose-dev.yml.
+name: sio
+
 x-common-envs: &common-envs
- FILETRACKER_URL: 'http://web:9999'
- DATABASE_HOST: 'db'
- DATABASE_PORT: '5432'
- OIOIOI_TIMEZONE: '${OIOIOI_TIMEZONE:-Europe/Warsaw}'
+  FILETRACKER_URL: 'http://web:9999'
+  DATABASE_HOST: 'db'
+  DATABASE_PORT: '5432'
+  OIOIOI_DB_ENGINE: 'django.db.backends.postgresql'
+  OIOIOI_DB_HOST: 'db'
+  OIOIOI_DB_PASSWORD: '${OIOIOI_DB_PASSWORD:?set OIOIOI_DB_PASSWORD in .env}'
+  OIOIOI_TIMEZONE: '${OIOIOI_TIMEZONE:-Europe/Warsaw}'
 
 services:
   db:
-    image: library/postgres:14.17
+    image: postgres:14.17
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: "oioioi"
-      POSTGRES_PASSWORD: "password"
-      POSTGRES_DB: "oioioi"
+      POSTGRES_USER: oioioi
+      POSTGRES_PASSWORD: '${OIOIOI_DB_PASSWORD:?set OIOIOI_DB_PASSWORD in .env}'
+      POSTGRES_DB: oioioi
     volumes:
-      - postgress-data:/var/lib/postgresql/data
+      - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/postgres:/var/lib/postgresql/data
     stop_grace_period: 1m
+
+  broker:
+    image: rabbitmq:3.8
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: oioioi
+      RABBITMQ_DEFAULT_PASS: oioioi
+    stop_grace_period: 1m
+
   web:
-    image: sio2project/oioioi:$OIOIOI_VERSION
+    build: .
+    image: sio-oioioi:latest
+    restart: unless-stopped
     command: ["/sio2/oioioi/oioioi_init.sh"]
     environment:
-      OIOIOI_DB_ENGINE: 'django.db.backends.postgresql'
+      <<: *common-envs
+      OIOIOI_SERVER_MODE: 'uwsgi-http'
       RABBITMQ_HOST: 'broker'
       RABBITMQ_PORT: '5672'
       RABBITMQ_USER: 'oioioi'
       RABBITMQ_PASSWORD: 'oioioi'
       FILETRACKER_LISTEN_ADDR: '0.0.0.0'
       FILETRACKER_LISTEN_PORT: '9999'
-      <<: *common-envs
     ports:
-      - "8000:8000"
-    stop_grace_period: 3m
-    depends_on:
-      - db
-      - broker
+      - "${SIO_PORT:-8888}:8000"
     volumes:
-      - filetracker-data:/sio2/deployment/media
+      - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/filetracker:/sio2/deployment/media
+      - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/settings.py:/sio2/deployment/settings.py
+    depends_on: [db, broker]
+    stop_grace_period: 3m
+
   worker:
-    image: sio2project/oioioi:$OIOIOI_VERSION
+    image: sio-oioioi:latest
+    restart: unless-stopped
     command: ["/sio2/oioioi/worker_init.sh"]
     environment:
-      WEB_URL: "web:8000"
       <<: *common-envs
+      WEB_URL: 'web:8000'
+    cap_add: [ALL]
+    depends_on: [web]
     stop_grace_period: 1m
-    cap_add:
-      - ALL
-    depends_on:
-      - db
-  broker:
-    image: library/rabbitmq:3.8
-    environment:
-      RABBITMQ_DEFAULT_USER: oioioi
-      RABBITMQ_DEFAULT_PASS: oioioi
-    stop_grace_period: 1m
-volumes:
-  postgress-data:
-  filetracker-data:
