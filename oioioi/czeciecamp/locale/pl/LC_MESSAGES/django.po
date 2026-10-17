@@ -410,3 +410,11 @@ msgstr "ukryty"
 
 msgid "show"
 msgstr "pokaż"
+
+# Strings of oioioi.base added in this fork (login with e-mail); the global
+# catalogs in oioioi/_locale are managed through Transifex.
+msgid "Username or email"
+msgstr "Login lub e-mail"
+
+msgid "Password authentication with e-mail"
+msgstr "Logowanie hasłem przez e-mail"

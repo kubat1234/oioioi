@@ -6,6 +6,7 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import (
+    AuthenticationForm,
     PasswordResetForm,
     UserChangeForm,
     UserCreationForm,
@@ -365,3 +366,11 @@ class PublicMessageForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class UsernameOrEmailAuthenticationForm(AuthenticationForm):
+    """The login form; ``oioioi.base.auth.EmailAuthBackend`` accepts an e-mail too."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["username"].label = _("Username or email")

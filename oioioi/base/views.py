@@ -135,12 +135,16 @@ def logout_view(request):
     )
 
 
+class LoginView(Login2FAView):
+    form_list = ((Login2FAView.AUTH_STEP, oioioi.base.forms.UsernameOrEmailAuthenticationForm),) + Login2FAView.form_list[1:]
+
+
 def login_view(request, redirect_field_name=REDIRECT_FIELD_NAME, **kwargs):
     if request.user.is_authenticated:
         redirect_to = request.GET.get(redirect_field_name, None)
         return safe_redirect(request, redirect_to)
     else:
-        return Login2FAView.as_view(**kwargs)(request)
+        return LoginView.as_view(**kwargs)(request)
 
 
 @require_GET

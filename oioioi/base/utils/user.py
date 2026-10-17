@@ -6,6 +6,31 @@ from oioioi.base.utils.validators import UnicodeValidator
 
 USERNAME_REGEX = r"^[a-zA-Z0-9_]+$"
 
+# Gmail ignores dots and everything after "+" in the local part.
+GMAIL_DOMAINS = ("gmail.com", "googlemail.com")
+
+
+def canonical_email(email):
+    """The form of an e-mail address under which it reaches the same mailbox:
+    lowercase, and for Gmail without dots and "+..." in the local part.
+    """
+    local, _, domain = email.strip().lower().rpartition("@")
+    if domain in GMAIL_DOMAINS:
+        local = local.split("+")[0].replace(".", "")
+        domain = GMAIL_DOMAINS[0]
+    return f"{local}@{domain}"
+
+
+def users_with_email(email, queryset):
+    """Users from ``queryset`` whose e-mail reaches the same mailbox as ``email``."""
+    canonical = canonical_email(email)
+    domain = canonical.rpartition("@")[2]
+    domains = GMAIL_DOMAINS if domain in GMAIL_DOMAINS else (domain,)
+    domains_regex = "|".join(re.escape(d) for d in domains)
+    candidates = queryset.filter(email__iregex=rf"@({domains_regex})\s*$")
+    return [user for user in candidates if canonical_email(user.email) == canonical]
+
+
 """ All characters constituting users name and surname must
     belong to one of the categories specified in
     `UNICODE_CATEGORY_LIST`. For a guide of unicode categories

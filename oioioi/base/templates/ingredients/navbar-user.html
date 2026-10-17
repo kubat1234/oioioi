@@ -25,7 +25,7 @@ function setFocusToLoginInput(){
                 {% csrf_token %}
                 <input name="login_view-current_step" type="hidden" value="auth">
                 <div class="mb-3">
-                    <input id="navbar-login-input" type="text" name="auth-username" class="form-control" placeholder="{% trans "Login" %}" tabindex="-1">
+                    <input id="navbar-login-input" type="text" name="auth-username" class="form-control" placeholder="{% trans "Username or email" %}" tabindex="-1">
                 </div>
                 <div class="mb-3">
                     <input type="password" name="auth-password" class="form-control" placeholder="{% trans "Password" %}">

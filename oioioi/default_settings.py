@@ -354,6 +354,7 @@ CAPTCHA_LETTER_ROTATION = (-70, 70)
 AUTHENTICATION_BACKENDS = (
     # 'oioioi.teachers.auth.TeacherAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
+    'oioioi.base.auth.EmailAuthBackend',
     'oioioi.contests.auth.ContestPermissionsAuthBackend',
 )
 
