@@ -7,7 +7,7 @@ from django.utils.translation import pgettext_lazy
 
 from oioioi.base.utils.validators import validate_db_string_id
 from oioioi.contests.models import Contest, Round
-from oioioi.czeciecamp.models import CzecieCampConfig, check_weights
+from oioioi.czeciecamp.models import CampRanking, CzecieCampConfig, check_weights, ordered_rounds
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M"
 
@@ -42,7 +42,7 @@ class CampSettingsForm(BootstrapFormMixin, forms.ModelForm):
 
     class Meta:
         model = CzecieCampConfig
-        fields = ["counting_end_date", "daily_weight", "stale_weight", "results_visible_during_round"]
+        fields = ["counting_end_date", "results_visible_during_round"]
 
 
 class RoundForm(BootstrapFormMixin, forms.ModelForm):
@@ -79,6 +79,51 @@ class RoundForm(BootstrapFormMixin, forms.ModelForm):
         if same_name.exists():
             raise forms.ValidationError(_("A round with this name already exists."))
         return name
+
+
+class RankingForm(BootstrapFormMixin, forms.ModelForm):
+    public_date = DateTimeLocalField(
+        required=False,
+        label=CampRanking._meta.get_field("public_date").verbose_name,
+        help_text=CampRanking._meta.get_field("public_date").help_text,
+    )
+
+    class Meta:
+        model = CampRanking
+        fields = [
+            "name",
+            "daily_weight",
+            "stale_weight",
+            "daily_scoring",
+            "rounds",
+            "public_date",
+            "medals",
+            "show_sum",
+            "show_percentage",
+            "show_difference",
+        ]
+        widgets = {"rounds": forms.CheckboxSelectMultiple}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        contest = self.instance.contest
+        if self.instance.round_id is not None:
+            # The ranking of a round always shows that round.
+            del self.fields["rounds"]
+        else:
+            rounds = self.fields["rounds"]
+            rounds.queryset = contest.round_set.all()
+            rounds.choices = [(round.id, round.name) for round in ordered_rounds(contest)]
+            rounds.widget.attrs["class"] = "form-check-input"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("daily_weight") is not None and cleaned_data.get("stale_weight") is not None:
+            try:
+                check_weights(cleaned_data["daily_weight"], cleaned_data["stale_weight"])
+            except forms.ValidationError as error:
+                self.add_error(None, error)
+        return cleaned_data
 
 
 class FreezeDateForm(BootstrapFormMixin, forms.ModelForm):
@@ -150,13 +195,16 @@ class CreateCampForm(BootstrapFormMixin, forms.Form):
     daily_weight = forms.IntegerField(
         min_value=0,
         initial=1,
-        label=capfirst(CzecieCampConfig._meta.get_field("daily_weight").verbose_name),
-        help_text=CzecieCampConfig._meta.get_field("daily_weight").help_text,
+        label=capfirst(_("daily ranking weight")),
+        help_text=_(
+            "Main ranking = daily weight × Daily + all-time weight × All-time. If one weight is 0, the other ranking is the main one. "
+            "Each ranking can be changed later in the camp panel."
+        ),
     )
     stale_weight = forms.IntegerField(
         min_value=0,
         initial=1,
-        label=capfirst(CzecieCampConfig._meta.get_field("stale_weight").verbose_name),
+        label=capfirst(_("all-time ranking weight")),
     )
 
     def clean(self):

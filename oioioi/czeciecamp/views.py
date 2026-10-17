@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Max
 from django.shortcuts import get_object_or_404, redirect
 from django.template.response import TemplateResponse
 from django.urls import reverse
@@ -17,12 +18,20 @@ from oioioi.contests.menu import contest_admin_menu_registry
 from oioioi.contests.models import Contest, Round
 from oioioi.contests.utils import contest_exists, is_contest_basicadmin
 from oioioi.czeciecamp.controllers import CzecieCampContestController, get_freeze_date, get_last_round_end, is_frozen
-from oioioi.czeciecamp.forms import AddParticipantsForm, CampSettingsForm, CreateCampForm, FreezeDateForm, RoundForm
-from oioioi.czeciecamp.models import CzecieCampConfig, get_camp_config, ordered_rounds
+from oioioi.czeciecamp.forms import AddParticipantsForm, CampSettingsForm, CreateCampForm, FreezeDateForm, RankingForm, RoundForm
+from oioioi.czeciecamp.models import (
+    CONTROLLER_NAME,
+    CampRanking,
+    CzecieCampConfig,
+    create_default_rankings,
+    get_camp_config,
+    ordered_rankings,
+    ordered_rounds,
+    round_weights,
+)
 from oioioi.participants.models import Participant
 from oioioi.rankings.models import Ranking
 
-CONTROLLER_NAME = "oioioi.czeciecamp.controllers.CzecieCampContestController"
 NEW_ROUND_PREFIX = "new"
 ROUNDS_FORM_ID = "rounds-form"
 DEFAULT_START_HOUR = 20
@@ -82,10 +91,20 @@ def _round_rows(contest, config, now):
                     counted=round.id not in config.excluded_rounds,
                 ),
                 "results_visible": round.results_date is not None and round.results_date <= now,
-                "ranking_visible": round.public_results_date is not None and round.public_results_date <= now,
             }
         )
     return rows
+
+
+def _ranking_rows(contest, now):
+    return [
+        {
+            "ranking": ranking,
+            "visible": ranking.public_date is not None and ranking.public_date <= now,
+            "rounds": ranking.get_rounds() if ranking.round_id is None else None,
+        }
+        for ranking in ordered_rankings(contest)
+    ]
 
 
 def _report_form_errors(request, form, title=""):
@@ -151,6 +170,8 @@ def panel_view(request):
         "participants_form": participants_form,
         "participants": Participant.objects.filter(contest=contest).select_related("user").order_by("user__last_name", "user__first_name"),
         "rounds": _round_rows(contest, config, now),
+        "rankings": _ranking_rows(contest, now),
+        "ranking_moves": [("up", "▲", _("Move up")), ("down", "▼", _("Move down"))],
         "new_round_form": RoundForm(
             prefix=NEW_ROUND_PREFIX,
             html_form="new-round-form",
@@ -177,13 +198,6 @@ def round_action_view(request, round_id, action):
         round.results_date = now
     elif action == "hide_results":
         round.results_date = None
-        round.public_results_date = None
-    elif action == "show_ranking":
-        if round.results_date is None or round.results_date > now:
-            round.results_date = now
-        round.public_results_date = now
-    elif action == "hide_ranking":
-        round.public_results_date = None
     else:
         raise PermissionDenied
     round.save()
@@ -249,6 +263,7 @@ def save_rounds_view(request):
         excluded = set(config.excluded_rounds)
         for form in forms:
             form.save()
+            _update_round_ranking(form)
             if form.cleaned_data["counted"]:
                 excluded.discard(form.instance.id)
             else:
@@ -259,6 +274,18 @@ def save_rounds_view(request):
     Ranking.invalidate_contest(contest)
     messages.success(request, _("Rounds saved."))
     return redirect(_panel_url(contest))
+
+
+def _update_round_ranking(form):
+    """The ranking of a round follows changes of its type, and of its name
+    unless the ranking was renamed.
+    """
+    for ranking in form.instance.camp_rankings.all():
+        if "is_trial" in form.changed_data:
+            ranking.daily_weight, ranking.stale_weight = round_weights(form.instance)
+        if "name" in form.changed_data and ranking.name == form.initial.get("name"):
+            ranking.name = form.instance.name
+        ranking.save()
 
 
 @require_POST
@@ -274,6 +301,66 @@ def delete_round_view(request, round_id):
     Ranking.invalidate_contest(request.contest)
     messages.success(request, _("Deleted %(name)s.") % {"name": name})
     return redirect(_panel_url(request.contest))
+
+
+@enforce_condition(contest_exists & is_contest_basicadmin & is_czecie_camp)
+def edit_ranking_view(request, ranking_id=None):
+    contest = request.contest
+    if ranking_id is None:
+        next_order = (contest.camp_rankings.filter(round=None).aggregate(Max("order"))["order__max"] or 0) + 1
+        ranking = CampRanking(contest=contest, order=next_order)
+    else:
+        ranking = get_object_or_404(CampRanking, id=ranking_id, contest=contest)
+    form = RankingForm(request.POST or None, instance=ranking)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        Ranking.invalidate_contest(contest)
+        messages.success(request, _("Ranking saved."))
+        return redirect(_panel_url(contest))
+    return TemplateResponse(request, "czeciecamp/ranking_form.html", {"form": form, "ranking": ranking})
+
+
+def _move_ranking(contest, ranking, step):
+    """Swaps a ranking without a round with its neighbour in the order."""
+    rankings = [r for r in ordered_rankings(contest) if r.round_id is None]
+    i = next(i for i, r in enumerate(rankings) if r.id == ranking.id)
+    j = i + step
+    if 0 <= j < len(rankings):
+        rankings[i], rankings[j] = rankings[j], rankings[i]
+    for order, r in enumerate(rankings):
+        if r.order != order:
+            r.order = order
+            r.save(update_fields=["order"])
+
+
+@require_POST
+@enforce_condition(contest_exists & is_contest_basicadmin & is_czecie_camp)
+def ranking_action_view(request, ranking_id, action):
+    contest = request.contest
+    ranking = get_object_or_404(CampRanking, id=ranking_id, contest=contest)
+    now = rounded_down(request.timestamp)
+    if action == "show":
+        ranking.public_date = now
+        round = ranking.round
+        # The ranking of a round shows only rounds with results.
+        if round is not None and not get_camp_config(contest).results_visible_during_round and (round.results_date is None or round.results_date > now):
+            round.results_date = now
+            round.save()
+        ranking.save()
+    elif action == "hide":
+        ranking.public_date = None
+        ranking.save()
+    elif action == "up":
+        _move_ranking(contest, ranking, -1)
+    elif action == "down":
+        _move_ranking(contest, ranking, 1)
+    elif action == "delete":
+        ranking.delete()
+        messages.success(request, _("Deleted %(name)s.") % {"name": ranking.name})
+    else:
+        raise PermissionDenied
+    Ranking.invalidate_contest(contest)
+    return redirect(_panel_url(contest))
 
 
 system_admin_menu_registry.register(
@@ -302,12 +389,12 @@ def create_camp_view(request):
             )
             CzecieCampConfig.objects.update_or_create(
                 contest=contest,
-                defaults={
-                    "results_visible_during_round": data["results_visible_during_round"],
-                    "daily_weight": data["daily_weight"],
-                    "stale_weight": data["stale_weight"],
-                },
+                defaults={"results_visible_during_round": data["results_visible_during_round"]},
             )
+            # Saving the contest created the default rankings, with weights 1.
+            contest.camp_rankings.all().delete()
+            create_default_rankings(contest, data["daily_weight"], data["stale_weight"])
+            # Rounds get their own rankings when they are created.
             # Day 0 is an "All-time" round; its results are visible right away.
             Round.objects.create(contest=contest, name=day_name(0), start_date=start, end_date=start, results_date=start, is_trial=True)
             for day in range(1, data["days"] + 1):

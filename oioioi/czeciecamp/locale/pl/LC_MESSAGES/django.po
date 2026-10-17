@@ -266,8 +266,8 @@ msgstr "Typ"
 msgid "Counted"
 msgstr "Liczona"
 
-msgid "Counted in the Daily, All-time and main rankings."
-msgstr "Liczy się do rankingów Dzienne, Stałe i głównego."
+msgid "Counted in the rankings that have no rounds selected."
+msgstr "Liczy się do rankingów, które nie mają wybranych rund."
 
 msgid "daily ranking weight"
 msgstr "waga rankingu dziennego"
@@ -275,11 +275,117 @@ msgstr "waga rankingu dziennego"
 msgid "all-time ranking weight"
 msgstr "waga rankingu stałego"
 
-msgid "Main ranking = daily weight × Daily + all-time weight × All-time. If one weight is 0, the other ranking is the main one."
-msgstr "Ranking główny = waga dzienna × Dzienne + waga stała × Stałe. Gdy jedna waga to 0, głównym rankingiem jest drugi."
+msgid ""
+"Main ranking = daily weight × Daily + all-time weight × All-time. If one weight is 0, the other ranking is the main one. "
+"Each ranking can be changed later in the camp panel."
+msgstr ""
+"Ranking główny = waga dzienna × Dzienne + waga stała × Stałe. Gdy jedna waga to 0, głównym rankingiem jest drugi. "
+"Każdy ranking można potem zmienić w panelu obozu."
 
-msgid "At least one weight must be greater than 0."
-msgstr "Co najmniej jedna waga musi być większa od 0."
+msgid "At least one weight must be different from 0."
+msgstr "Co najmniej jedna waga musi być różna od 0."
 
 msgid "rounds not counted"
 msgstr "rundy nieliczone"
+
+msgid "name"
+msgstr "nazwa"
+
+msgid "order"
+msgstr "kolejność"
+
+msgid "ranking of round"
+msgstr "ranking rundy"
+
+msgid "rounds"
+msgstr "rundy"
+
+msgid "None selected means all counted rounds."
+msgstr "Brak zaznaczonych oznacza wszystkie liczone rundy."
+
+msgid "daily weight"
+msgstr "waga dzienna"
+
+msgid "all-time weight"
+msgstr "waga stała"
+
+msgid "best submission"
+msgstr "najlepsze zgłoszenie"
+
+msgid "last submission"
+msgstr "ostatnie zgłoszenie"
+
+msgid "Daily counts the"
+msgstr "Dzienne liczą"
+
+msgid "Of the submissions sent during the round. All-time always counts the best one."
+msgstr "Spośród zgłoszeń wysłanych w trakcie rundy. Stałe zawsze liczą najlepsze."
+
+msgid "visible for participants from"
+msgstr "widoczny dla uczestników od"
+
+msgid "Empty means hidden."
+msgstr "Puste oznacza ukryty."
+
+msgid "camp ranking"
+msgstr "ranking obozu"
+
+msgid "camp rankings"
+msgstr "rankingi obozu"
+
+msgid "Ranking saved."
+msgstr "Zapisano ranking."
+
+msgid "Visible"
+msgstr "Widoczny"
+
+msgid "this round"
+msgstr "ta runda"
+
+msgid "all counted"
+msgstr "wszystkie liczone"
+
+msgid "Delete the ranking %(name)s?"
+msgstr "Usunąć ranking %(name)s?"
+
+msgid "Delete ranking"
+msgstr "Usuń ranking"
+
+msgid "No rankings yet."
+msgstr "Brak rankingów."
+
+msgid "Every round gets its own ranking when it is added. Click a ranking to change its name, weights, rounds or how Daily is counted."
+msgstr "Każda runda dostaje własny ranking przy dodaniu. Kliknij ranking, aby zmienić nazwę, wagi, rundy lub sposób liczenia Dziennych."
+
+msgid "Add ranking"
+msgstr "Dodaj ranking"
+
+msgid "Ranking of the round %(name)s."
+msgstr "Ranking rundy %(name)s."
+
+msgid "Points = daily weight × Daily + all-time weight × All-time, summed over the rounds of the ranking. Daily counts submissions sent during the round, All-time all submissions until the counting end."
+msgstr "Punkty = waga dzienna × Dzienne + waga stała × Stałe, sumowane po rundach rankingu. Dzienne liczą zgłoszenia wysłane w trakcie rundy, Stałe wszystkie zgłoszenia do końca liczenia."
+
+msgid "Back to the panel"
+msgstr "Wróć do panelu"
+
+msgid "no medals"
+msgstr "bez medali"
+
+msgid "places 1, 2 and 3"
+msgstr "miejsca 1, 2 i 3"
+
+msgid "IOI: 1/12 gold, 1/6 silver, 1/4 bronze"
+msgstr "IOI: 1/12 złotych, 1/6 srebrnych, 1/4 brązowych"
+
+msgid "medals"
+msgstr "medale"
+
+msgid "show sum"
+msgstr "pokaż sumę"
+
+msgid "show percentage of the leader's sum"
+msgstr "pokaż procent sumy lidera"
+
+msgid "show difference to the leader"
+msgstr "pokaż różnicę do lidera"

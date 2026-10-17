@@ -19,12 +19,9 @@
                 <tr>
                     <th class="text-end">#</th>
                     <th>{% trans "User" context "ranking" %}</th>
-                    {% if is_aggregate %}
-                        <th class="text-end">∑</th>
-                        <th class="text-end">±</th>
-                    {% else %}
-                        <th class="text-end">{% trans "Sum" %}</th>
-                    {% endif %}
+                    {% if show_sum %}<th class="text-end">{% if is_aggregate %}∑{% else %}{% trans "Sum" %}{% endif %}</th>{% endif %}
+                    {% if show_percentage %}<th class="text-end">%</th>{% endif %}
+                    {% if show_difference %}<th class="text-end">±</th>{% endif %}
                     {% for pi, statement_visible in problem_instances %}
                         <th class="text-end">
                             {% if statement_visible %}
@@ -41,16 +38,15 @@
                     <tr id="ranking_row_{{ row.user.id }}"{% if row.medal %} class="camp-medal-{{ row.medal }}"{% endif %}>
                         <td class="text-end">{{ row.place }}</td>
                         <td class="user-cell">{% public_name row.user %}</td>
-                        <td class="text-end sum-cell"><strong>{{ row.sum }}</strong></td>
-                        {% if is_aggregate %}
-                            <td class="text-end text-muted">{% if row.diff %}{{ row.diff }}{% endif %}</td>
-                        {% endif %}
+                        {% if show_sum %}<td class="text-end sum-cell"><strong>{{ row.sum }}</strong></td>{% endif %}
+                        {% if show_percentage %}<td class="text-end text-muted">{{ row.percentage|floatformat:2 }}</td>{% endif %}
+                        {% if show_difference %}<td class="text-end text-muted">{% if row.diff %}{{ row.diff }}{% endif %}</td>{% endif %}
                         {% for cell in row.cells %}
                             <td class="text-end">
                                 {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
                                 {% if is_main %}
                                     {% if cell.daily is not None or cell.stale is not None %}
-                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">{% trans "Daily" %}: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>{% trans "All-time" %}: {{ stale_weight }}×{{ cell.stale|default_if_none:0 }} = {{ cell.weighted_stale }}</span></div>
+                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">Dzienne: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>Stałe: {{ stale_weight }}×{{ cell.stale|default_if_none:0 }} = {{ cell.weighted_stale }}</span></div>
                                     {% endif %}
                                 {% else %}
                                     {{ cell.value|default_if_none:'' }}

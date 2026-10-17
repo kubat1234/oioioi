@@ -8,9 +8,18 @@ from django.utils import timezone
 from oioioi.base.tests import TestCase, fake_time
 from oioioi.contests.models import Contest, ProblemInstance, Round, Submission
 from oioioi.contests.scores import IntegerScore
-from oioioi.czeciecamp.controllers import DAILY_KEY, MAIN_KEY, STALE_KEY
 from oioioi.czeciecamp.forms import make_contest_id
-from oioioi.czeciecamp.models import get_camp_config, ordered_rounds
+from oioioi.czeciecamp.models import (
+    MEDALS_IOI,
+    MEDALS_NONE,
+    SCORING_LAST,
+    CampRanking,
+    create_default_rankings,
+    get_camp_config,
+    ordered_rankings,
+    ordered_rounds,
+    ranking_label,
+)
 from oioioi.czeciecamp.views import rounded_down, rounded_now
 from oioioi.participants.models import Participant
 from oioioi.problems.models import Problem
@@ -50,6 +59,16 @@ class CampTestCase(TestCase):
         for user in (self.user1, self.user2):
             Participant.objects.create(contest=self.contest, user=user)
         self.rcontroller = self.contest.controller.ranking_controller()
+        CampRanking.objects.filter(contest=self.contest).update(public_date=_date(0))
+        self.main = self._camp_ranking("Dzienne + Stałe")
+        self.stale = self._camp_ranking("Stałe")
+        self.daily = self._camp_ranking("Dzienne")
+
+    def _camp_ranking(self, name):
+        return CampRanking.objects.get(contest=self.contest, round=None, name=name)
+
+    def _round_ranking(self, round):
+        return CampRanking.objects.get(round=round)
 
     def _round(self, name, day):
         return Round.objects.create(
@@ -72,8 +91,12 @@ class CampTestCase(TestCase):
     def _submit(self, user, pi, date, score, kind="NORMAL"):
         return Submission.objects.create(user=user, problem_instance=pi, date=date, kind=kind, score=IntegerScore(score))
 
-    def _ranking(self, partial_key, permission="regular"):
-        return self.rcontroller.serialize_ranking(f"{permission}#{partial_key}#test")
+    def _ranking(self, ranking, permission="regular"):
+        return self.rcontroller.serialize_ranking(f"{permission}#{ranking.id}#test")
+
+    def _set_weights(self, ranking, daily_weight, stale_weight):
+        ranking.daily_weight, ranking.stale_weight = daily_weight, stale_weight
+        ranking.save()
 
     def _row(self, data, user):
         return next(row for row in data["rows"] if row["user"] == user)
@@ -91,22 +114,20 @@ class TestCampRankings(CampTestCase):
         self._submit(self.user1, self.pi1, _date(1, hour=7), 100)
         self._submit(self.user1, self.pi_trial, _date(0, hour=1), 30)
 
-        self.assertEqual(self._row(self._ranking(DAILY_KEY), self.user1)["sum"], 50)
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 130)
-        self.assertEqual(self._row(self._ranking(MAIN_KEY), self.user1)["sum"], 180)
+        self.assertEqual(self._row(self._ranking(self.daily), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 130)
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 180)
         # Per-round rankings show Dzienne, the trial round shows Stałe.
-        self.assertEqual(self._row(self._ranking(str(self.round1.id)), self.user1)["sum"], 50)
-        self.assertEqual(self._row(self._ranking(str(self.trial.id)), self.user1)["sum"], 30)
+        self.assertEqual(self._row(self._ranking(self._round_ranking(self.round1)), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(self._round_ranking(self.trial)), self.user1)["sum"], 30)
 
-        config = get_camp_config(self.contest)
-        config.daily_weight = 2
-        config.save()
-        self.assertEqual(self._row(self._ranking(MAIN_KEY), self.user1)["sum"], 230)
+        self._set_weights(self.main, 2, 1)
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 230)
 
     def test_dzienne_has_no_trial_problems(self):
-        pis = [pi for pi, _visible in self._ranking(DAILY_KEY)["problem_instances"]]
+        pis = [pi for pi, _visible in self._ranking(self.daily)["problem_instances"]]
         self.assertNotIn(self.pi_trial, pis)
-        pis = [pi for pi, _visible in self._ranking(STALE_KEY)["problem_instances"]]
+        pis = [pi for pi, _visible in self._ranking(self.stale)["problem_instances"]]
         self.assertIn(self.pi_trial, pis)
 
     def test_counting_end(self):
@@ -115,11 +136,16 @@ class TestCampRankings(CampTestCase):
         config.save()
         self._submit(self.user1, self.pi1, _date(2), 40)
         self._submit(self.user1, self.pi1, _date(4), 100)
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 40)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 40)
+
+    def test_submissions_before_round_start_do_not_count(self):
+        self._submit(self.user1, self.pi2, _date(1, hour=1), 100)
+        self._submit(self.user1, self.pi2, _date(2, hour=7), 40)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 40)
 
     def test_ignored_submissions_do_not_count(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 100, kind="IGNORED")
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 0)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 0)
 
     def test_participant_status_invalidates_rankings(self):
         ranking = Ranking.objects.create(contest=self.contest, key="regular#main#test", needs_recalculation=False)
@@ -128,37 +154,35 @@ class TestCampRankings(CampTestCase):
         participant.save()
         ranking.refresh_from_db()
         self.assertTrue(ranking.needs_recalculation)
-        self.assertNotIn(self.user1, [row["user"] for row in self._ranking(MAIN_KEY)["rows"]])
+        self.assertNotIn(self.user1, [row["user"] for row in self._ranking(self.main)["rows"]])
 
     def test_only_participants_and_shared_places(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 70)
         self._submit(self.user2, self.pi1, _date(1, hour=2), 70)
         self._submit(self.outsider, self.pi1, _date(1, hour=2), 100)
-        rows = self._ranking(MAIN_KEY)["rows"]
+        rows = self._ranking(self.main)["rows"]
         self.assertEqual([row["user"] for row in rows], [self.user1, self.user2])
         self.assertEqual([row["place"] for row in rows], [1, 1])
 
     def test_combined_cells_diff_and_medals(self):
-        config = get_camp_config(self.contest)
-        config.daily_weight = 2
-        config.save()
+        self._set_weights(self.main, 2, 1)
         self._submit(self.user1, self.pi1, _date(1, hour=1), 30)
         self._submit(self.user2, self.pi1, _date(1, hour=7), 50)
-        data = self._ranking(MAIN_KEY)
+        data = self._ranking(self.main)
         row1, row2 = self._row(data, self.user1), self._row(data, self.user2)
         cell = row1["cells"][[pi for pi, _visible in data["problem_instances"]].index(self.pi1)]
         self.assertEqual((cell["weighted_daily"], cell["stale"], cell["value"]), (60, 30, 90))
         self.assertEqual((row1["diff"], row1["medal"]), (0, 1))
         self.assertEqual((row2["diff"], row2["medal"]), (-40, 2))
         self.assertTrue(data["is_aggregate"])
-        self.assertFalse(self._ranking(str(self.round1.id))["is_aggregate"])
+        self.assertFalse(self._ranking(self._round_ranking(self.round1))["is_aggregate"])
 
-    def test_unpublished_round_is_hidden(self):
-        self.round2.public_results_date = None
+    def test_round_without_results_is_hidden(self):
+        self.round2.results_date = None
         self.round2.save()
         self._submit(self.user1, self.pi2, _date(2, hour=1), 100)
-        self.assertEqual(self._row(self._ranking(MAIN_KEY), self.user1)["sum"], 0)
-        self.assertEqual(self._row(self._ranking(MAIN_KEY, "admin"), self.user1)["sum"], 200)
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 0)
+        self.assertEqual(self._row(self._ranking(self.main, "admin"), self.user1)["sum"], 200)
 
     def _available_rankings(self):
         request = RequestFactory().get("/")
@@ -169,34 +193,107 @@ class TestCampRankings(CampTestCase):
 
     def test_available_rankings_order(self):
         keys = [key for key, _name in self._available_rankings()]
-        expected = [MAIN_KEY, STALE_KEY, DAILY_KEY, str(self.trial.id), str(self.round1.id), str(self.round2.id)]
-        self.assertEqual(keys, expected)
+        rankings = [self.main, self.stale, self.daily] + [self._round_ranking(r) for r in (self.trial, self.round1, self.round2)]
+        self.assertEqual(keys, [str(r.id) for r in rankings])
+
+    def test_hidden_ranking(self):
+        self.stale.public_date = None
+        self.stale.save()
+        self.daily.public_date = _date(20)
+        self.daily.save()
+        keys = [key for key, _name in self._available_rankings()]
+        self.assertNotIn(str(self.stale.id), keys)
+        self.assertNotIn(str(self.daily.id), keys)
+        self.assertIn(str(self.main.id), keys)
+        self.assertTrue(self.client.login(username="test_admin"))
+        self.assertEqual(self.client.get(reverse("ranking", kwargs={"contest_id": self.contest.id, "key": self.stale.id})).status_code, 200)
+        self.assertTrue(self.client.login(username="test_user"))
+        self.assertEqual(self.client.get(reverse("ranking", kwargs={"contest_id": self.contest.id, "key": self.stale.id})).status_code, 404)
+
+    def test_last_submission_in_daily(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi1, _date(1, hour=2), 30)
+        self._submit(self.user1, self.pi1, _date(1, hour=7), 100)
+        self.assertEqual(self._row(self._ranking(self.daily), self.user1)["sum"], 50)
+        self.daily.daily_scoring = SCORING_LAST
+        self.daily.save()
+        self.assertEqual(self._row(self._ranking(self.daily), self.user1)["sum"], 30)
+        self.main.daily_scoring = SCORING_LAST
+        self.main.save()
+        # All-time still counts the best submission.
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 130)
+
+    def test_selected_rounds(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi2, _date(2, hour=1), 70)
+        ranking = CampRanking.objects.create(contest=self.contest, name="Finał", daily_weight=1, stale_weight=0, public_date=_date(0))
+        ranking.rounds.set([self.round2])
+        data = self._ranking(ranking)
+        self.assertEqual([pi for pi, _visible in data["problem_instances"]], [self.pi2])
+        self.assertEqual(self._row(data, self.user1)["sum"], 70)
+        self.assertTrue(data["is_aggregate"])
+
+    def test_medals_and_summary_columns(self):
+        users = [self.user1, self.user2] + [User.objects.create(username=f"extra{i}") for i in range(10)]
+        for i, user in enumerate(users):
+            Participant.objects.get_or_create(contest=self.contest, user=user)
+            self._submit(user, self.pi1, _date(1, hour=1), 100 - 5 * i)
+        medals = lambda: [row["medal"] for row in self._ranking(self.daily)["rows"]]  # noqa: E731
+        self.assertEqual(medals(), [1, 2, 3] + [None] * 9)
+        self.daily.medals = MEDALS_IOI
+        self.daily.save()
+        # 12 participants: 1 gold, 2 silver, 3 bronze.
+        self.assertEqual(medals(), [1, 2, 2, 3, 3, 3] + [None] * 6)
+        self.daily.medals = MEDALS_NONE
+        self.daily.save()
+        self.assertEqual(medals(), [None] * 12)
+        data = self._ranking(self.daily)
+        self.assertEqual(data["rows"][1]["percentage"], 95)
+        self.assertEqual((data["show_sum"], data["show_percentage"], data["show_difference"]), (True, False, True))
+        self.assertFalse(self._ranking(self._round_ranking(self.round1))["show_difference"])
+
+    def test_csv(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        key = f"regular#{self.main.id}#test"
+        data = self._ranking(self.main)
+        header = self.rcontroller._get_csv_header(key, data)
+        self.assertEqual(header[5:8], ["Dzienne", "Stałe", "zero (Dzienne)"])
+        row = self.rcontroller._get_csv_row(key, self._row(data, self.user1))
+        self.assertEqual(row[1:7], ["test_user", "Test", "User", 100, 50, 50])
+
+    def test_negative_weight(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi1, _date(1, hour=7), 80)
+        self._set_weights(self.main, -1, 1)
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 30)
 
     def test_weights(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
         self._submit(self.user1, self.pi1, _date(1, hour=7), 100)
-        config = get_camp_config(self.contest)
-        config.daily_weight, config.stale_weight = 2, 3
-        config.save()
-        data = self._ranking(MAIN_KEY)
+        self._set_weights(self.main, 2, 3)
+        data = self._ranking(self.main)
         self.assertEqual(self._row(data, self.user1)["sum"], 2 * 50 + 3 * 100)
         cell = self._row(data, self.user1)["cells"][[pi for pi, _visible in data["problem_instances"]].index(self.pi1)]
         self.assertEqual((cell["weighted_daily"], cell["weighted_stale"], cell["value"]), (100, 300, 400))
 
-    def test_main_ranking_label(self):
-        config = get_camp_config(self.contest)
-        for daily, stale, label in [(1, 1, "Daily + All-time"), (2, 1, "2 × Daily + All-time"), (3, 2, "3 × Daily + 2 × All-time")]:
-            config.daily_weight, config.stale_weight = daily, stale
-            self.assertEqual(config.main_ranking_label(), label)
+    def test_ranking_label(self):
+        for daily, stale, label in [(1, 1, "Dzienne + Stałe"), (2, 1, "2 × Dzienne + Stałe"), (3, 2, "3 × Dzienne + 2 × Stałe")]:
+            self.assertEqual(ranking_label(daily, stale), label)
 
-    def test_zero_weight_makes_the_other_ranking_main(self):
-        config = get_camp_config(self.contest)
-        config.daily_weight, config.stale_weight = 0, 2
-        config.save()
-        self.assertEqual([key for key, _name in self._available_rankings()][:3], [STALE_KEY, DAILY_KEY, str(self.trial.id)])
-        config.daily_weight, config.stale_weight = 1, 0
-        config.save()
-        self.assertEqual([key for key, _name in self._available_rankings()][:3], [DAILY_KEY, STALE_KEY, str(self.trial.id)])
+    def test_default_rankings(self):
+        contest = Contest.objects.create(id="camp2", name="Camp 2", controller_name=CONTROLLER)
+        self.assertEqual([r.name for r in ordered_rankings(contest)], ["Dzienne + Stałe", "Stałe", "Dzienne"])
+        for daily, stale, names in [(0, 2, ["Stałe", "Dzienne"]), (1, 0, ["Dzienne", "Stałe"])]:
+            contest.camp_rankings.all().delete()
+            create_default_rankings(contest, daily, stale)
+            self.assertEqual([r.name for r in ordered_rankings(contest)], names)
+
+    def test_rounds_get_rankings(self):
+        self.assertEqual((self._round_ranking(self.round1).daily_weight, self._round_ranking(self.round1).stale_weight), (1, 0))
+        self.assertEqual((self._round_ranking(self.trial).daily_weight, self._round_ranking(self.trial).stale_weight), (0, 1))
+        other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        Round.objects.create(contest=other, name="R", start_date=_date(0))
+        self.assertFalse(CampRanking.objects.filter(contest=other).exists())
 
     def test_round_not_counted(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
@@ -204,12 +301,12 @@ class TestCampRankings(CampTestCase):
         config = get_camp_config(self.contest)
         config.excluded_rounds = [self.round2.id]
         config.save()
-        for key in (MAIN_KEY, STALE_KEY, DAILY_KEY):
-            data = self._ranking(key)
+        for ranking in (self.main, self.stale, self.daily):
+            data = self._ranking(ranking)
             self.assertNotIn(self.pi2, [pi for pi, _visible in data["problem_instances"]])
-        self.assertEqual(self._row(self._ranking(DAILY_KEY), self.user1)["sum"], 50)
-        self.assertEqual(self._row(self._ranking(str(self.round2.id)), self.user1)["sum"], 70)
-        self.assertIn(str(self.round2.id), [key for key, _name in self._available_rankings()])
+        self.assertEqual(self._row(self._ranking(self.daily), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(self._round_ranking(self.round2)), self.user1)["sum"], 70)
+        self.assertIn(str(self._round_ranking(self.round2).id), [key for key, _name in self._available_rankings()])
 
 
 class TestCampFreeze(CampTestCase):
@@ -218,27 +315,27 @@ class TestCampFreeze(CampTestCase):
         # After the last round ended, frozen for participants.
         self._submit(self.user1, self.pi1, _date(3), 100)
 
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 50)
-        self.assertEqual(self._row(self._ranking(MAIN_KEY), self.user1)["sum"], 100)
-        self.assertIsNotNone(self._ranking(STALE_KEY)["frozen_at"])
-        self.assertEqual(self._row(self._ranking(STALE_KEY, "admin"), self.user1)["sum"], 100)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(self.main), self.user1)["sum"], 100)
+        self.assertIsNotNone(self._ranking(self.stale)["frozen_at"])
+        self.assertEqual(self._row(self._ranking(self.stale, "admin"), self.user1)["sum"], 100)
 
         config = get_camp_config(self.contest)
         config.rankings_unfrozen = True
         config.save()
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 100)
-        self.assertIsNone(self._ranking(STALE_KEY)["frozen_at"])
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 100)
+        self.assertIsNone(self._ranking(self.stale)["frozen_at"])
 
     def test_full_key_changes_on_freeze(self):
         request = RequestFactory().get("/")
         request.user = self.user1
         request.contest = self.contest
         request.timestamp = _date(2, hour=7)
-        frozen_key = self.rcontroller.get_full_key(request, MAIN_KEY)
+        frozen_key = self.rcontroller.get_full_key(request, str(self.main.id))
         config = get_camp_config(self.contest)
         config.rankings_unfrozen = True
         config.save()
-        self.assertNotEqual(frozen_key, self.rcontroller.get_full_key(request, MAIN_KEY))
+        self.assertNotEqual(frozen_key, self.rcontroller.get_full_key(request, str(self.main.id)))
 
     def test_custom_freeze_date(self):
         config = get_camp_config(self.contest)
@@ -246,8 +343,8 @@ class TestCampFreeze(CampTestCase):
         config.save()
         self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
         self._submit(self.user1, self.pi1, _date(1, hour=4), 100)
-        self.assertEqual(self._row(self._ranking(STALE_KEY), self.user1)["sum"], 50)
-        self.assertEqual(self._row(self._ranking(STALE_KEY, "admin"), self.user1)["sum"], 100)
+        self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 50)
+        self.assertEqual(self._row(self._ranking(self.stale, "admin"), self.user1)["sum"], 100)
 
 
 class TestCampSubmitting(CampTestCase):
@@ -283,16 +380,79 @@ class TestCampPanel(CampTestCase):
     def test_round_buttons(self):
         self.assertTrue(self.client.login(username="test_admin"))
         self.round2.results_date = None
-        self.round2.public_results_date = None
         self.round2.save()
         with fake_time(_date(2, hour=6, minute=4)):
-            self.client.post(self._url("czeciecamp_round_action", round_id=self.round2.id, action="show_ranking"))
+            self.client.post(self._url("czeciecamp_round_action", round_id=self.round2.id, action="show_results"))
         self.round2.refresh_from_db()
         self.assertEqual(self.round2.results_date, _date(2, hour=6))
-        self.assertEqual(self.round2.public_results_date, _date(2, hour=6))
-        self.client.post(self._url("czeciecamp_round_action", round_id=self.round2.id, action="hide_ranking"))
+        self.client.post(self._url("czeciecamp_round_action", round_id=self.round2.id, action="hide_results"))
         self.round2.refresh_from_db()
-        self.assertIsNone(self.round2.public_results_date)
+        self.assertIsNone(self.round2.results_date)
+
+    def test_ranking_buttons(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        ranking = self._round_ranking(self.round2)
+        ranking.public_date = None
+        ranking.save()
+        self.round2.results_date = None
+        self.round2.save()
+        with fake_time(_date(2, hour=6, minute=4)):
+            self.client.post(self._url("czeciecamp_ranking_action", ranking_id=ranking.id, action="show"))
+        ranking.refresh_from_db()
+        self.round2.refresh_from_db()
+        self.assertEqual(ranking.public_date, _date(2, hour=6))
+        # Showing the ranking of a round shows its results too.
+        self.assertEqual(self.round2.results_date, _date(2, hour=6))
+        self.client.post(self._url("czeciecamp_ranking_action", ranking_id=ranking.id, action="hide"))
+        ranking.refresh_from_db()
+        self.assertIsNone(ranking.public_date)
+
+    def test_move_and_delete_ranking(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        self.client.post(self._url("czeciecamp_ranking_action", ranking_id=self.daily.id, action="up"))
+        self.assertEqual([r.id for r in ordered_rankings(self.contest)][:3], [self.main.id, self.daily.id, self.stale.id])
+        self.client.post(self._url("czeciecamp_ranking_action", ranking_id=self.main.id, action="up"))
+        self.assertEqual(ordered_rankings(self.contest)[0], self.main)
+        self.client.post(self._url("czeciecamp_ranking_action", ranking_id=self.stale.id, action="delete"))
+        self.assertFalse(CampRanking.objects.filter(id=self.stale.id).exists())
+
+    def test_edit_ranking(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        url = self._url("czeciecamp_edit_ranking", ranking_id=self.main.id)
+        self.assertContains(self.client.get(url), "Runda 2")
+        data = {
+            "name": "Główny",
+            "daily_weight": 0,
+            "stale_weight": 0,
+            "daily_scoring": "last",
+            "rounds": [self.round1.id, self.round2.id],
+            "public_date": "",
+            "medals": "ioi",
+            "show_percentage": "on",
+        }
+        response = self.client.post(url, data)
+        self.assertContains(response, "At least one weight must be different from 0.")
+        data["daily_weight"] = 2
+        self.client.post(url, data)
+        self.main.refresh_from_db()
+        self.assertEqual((self.main.name, self.main.daily_weight, self.main.daily_scoring, self.main.public_date), ("Główny", 2, "last", None))
+        self.assertEqual((self.main.medals, self.main.show_sum, self.main.show_percentage, self.main.show_difference), ("ioi", False, True, False))
+        self.assertEqual(set(self.main.rounds.all()), {self.round1, self.round2})
+
+    def test_add_ranking(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = {"name": "Finał", "daily_weight": 1, "stale_weight": 0, "daily_scoring": "best", "rounds": [self.round2.id], "public_date": "", "medals": "none"}
+        self.client.post(self._url("czeciecamp_add_ranking"), data)
+        ranking = CampRanking.objects.get(contest=self.contest, name="Finał")
+        self.assertEqual(ordered_rankings(self.contest)[3], ranking)
+
+    def test_round_changes_follow_in_its_ranking(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = self._all_rounds_data([self.trial, self.round1, self.round2])
+        data.update(self._round_data(f"r{self.round1.id}", "Dzień 1", "2020-08-02T09:00", "2020-08-02T14:00", is_trial=True))
+        self.client.post(self._url("czeciecamp_save_rounds"), data)
+        ranking = self._round_ranking(self.round1)
+        self.assertEqual((ranking.name, ranking.daily_weight, ranking.stale_weight), ("Dzień 1", 0, 1))
 
     def test_freeze_date_form(self):
         self.assertTrue(self.client.login(username="test_admin"))
@@ -351,6 +511,7 @@ class TestCampPanel(CampTestCase):
         self.client.post(self._url("czeciecamp_add_round"), self._round_data("new", "Extra", "2020-08-04T09:00", "2020-08-04T14:00", counted=False))
         new_round = Round.objects.get(contest=self.contest, name="Extra")
         self.assertFalse(new_round.is_trial)
+        self.assertEqual(self._round_ranking(new_round).name, "Extra")
         self.assertEqual(get_camp_config(self.contest).excluded_rounds, [new_round.id])
 
     def test_save_rounds_counted(self):
@@ -363,16 +524,13 @@ class TestCampPanel(CampTestCase):
         self.client.post(self._url("czeciecamp_save_rounds"), data)
         self.assertEqual(get_camp_config(self.contest).excluded_rounds, [])
 
-    def test_settings_reject_zero_weights(self):
+    def test_settings(self):
         self.assertTrue(self.client.login(username="test_admin"))
-        data = {"action": "settings", "counting_end_date": "", "daily_weight": 0, "stale_weight": 0}
-        response = self.client.post(self._url("czeciecamp_panel"), data)
-        self.assertContains(response, "At least one weight must be greater than 0.")
-        self.assertEqual(get_camp_config(self.contest).daily_weight, 1)
-        data.update(daily_weight=3, stale_weight=0)
+        data = {"action": "settings", "counting_end_date": "2020-08-03T20:00", "results_visible_during_round": "on"}
         self.client.post(self._url("czeciecamp_panel"), data)
         config = get_camp_config(self.contest)
-        self.assertEqual((config.daily_weight, config.stale_weight), (3, 0))
+        self.assertEqual(config.counting_end_date, timezone.make_aware(datetime(2020, 8, 3, 20, 0)))
+        self.assertTrue(config.results_visible_during_round)
 
     def test_add_round_validation(self):
         self.assertTrue(self.client.login(username="test_admin"))
@@ -409,8 +567,10 @@ class TestCampPanel(CampTestCase):
 
     def test_delete_round(self):
         self.assertTrue(self.client.login(username="test_admin"))
+        ranking = self._round_ranking(self.round2)
         self.client.post(self._url("czeciecamp_delete_round", round_id=self.round2.id))
         self.assertFalse(Round.objects.filter(id=self.round2.id).exists())
+        self.assertFalse(CampRanking.objects.filter(id=ranking.id).exists())
         self.pi2.refresh_from_db()
         self.assertIsNone(self.pi2.round)
 
@@ -423,8 +583,8 @@ class TestCampPanel(CampTestCase):
         request.contest = self.contest
         request.timestamp = _date(10)
         keys = [key for key, _name in self.rcontroller.available_rankings(request)]
-        self.assertEqual(keys[3:], [str(self.trial.id), str(self.round2.id), str(self.round1.id)])
-        pis = [pi for pi, _visible in self.rcontroller.serialize_ranking("admin#main#test")["problem_instances"]]
+        self.assertEqual(keys[3:], [str(self._round_ranking(r).id) for r in (self.trial, self.round2, self.round1)])
+        pis = [pi for pi, _visible in self._ranking(self.main, "admin")["problem_instances"]]
         self.assertEqual(pis, [self.pi_trial, self.pi2, self.pi1])
 
     def test_ranking_view(self):
@@ -432,7 +592,7 @@ class TestCampPanel(CampTestCase):
         self.assertTrue(self.client.login(username="test_user"))
         response = self.client.get(self._url("default_ranking"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Daily + All-time")
+        self.assertContains(response, "Dzienne + Stałe")
 
 
 class TestCreateCamp(TestCase):
@@ -456,7 +616,10 @@ class TestCreateCamp(TestCase):
         self.assertRedirects(response, reverse("czeciecamp_panel", kwargs={"contest_id": "oboz-lodz-2026"}))
         self.assertEqual(contest.controller_name, CONTROLLER)
         config = get_camp_config(contest)
-        self.assertEqual((config.daily_weight, config.stale_weight), (2, 3))
+        rankings = ordered_rankings(contest)
+        expected = [("2 × Dzienne + 3 × Stałe", 2, 3), ("Stałe", 0, 1), ("Dzienne", 1, 0)]
+        self.assertEqual([(r.name, r.daily_weight, r.stale_weight) for r in rankings[:3]], expected)
+        self.assertEqual([r.name for r in rankings[3:]], ["Day 0", "Day 1", "Day 2", "Day 3"])
         self.assertTrue(config.results_visible_during_round)
         self.assertEqual(contest.default_submissions_limit, 25)
         self.assertFalse(contest.show_contest_rules)
@@ -476,7 +639,7 @@ class TestCreateCamp(TestCase):
         self.assertTrue(self.client.login(username="test_admin"))
         data = {"name": "Zero", "start_date": "2026-08-03T20:00", "days": 1, "daily_weight": 0, "stale_weight": 0}
         response = self.client.post(reverse("czeciecamp_create"), data)
-        self.assertContains(response, "At least one weight must be greater than 0.")
+        self.assertContains(response, "At least one weight must be different from 0.")
         self.assertFalse(Contest.objects.filter(id="zero").exists())
 
     def test_create_default_start(self):

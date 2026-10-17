@@ -9,18 +9,24 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.contests.models import ProblemInstance, Submission
-from oioioi.contests.utils import is_contest_basicadmin
-from oioioi.czeciecamp.models import get_camp_config, ordered_rounds
+from oioioi.contests.utils import is_contest_basicadmin, is_contest_observer
+from oioioi.czeciecamp.models import (
+    DAILY_NAME,
+    MEDALS_NONE,
+    SCORING_LAST,
+    STALE_NAME,
+    CampRanking,
+    create_default_rankings,
+    get_camp_config,
+    medal_places,
+    ordered_rankings,
+)
 from oioioi.participants.controllers import ParticipantsController
 from oioioi.participants.utils import is_participant
 from oioioi.programs.controllers import ProgrammingContestController
 from oioioi.rankings.controllers import DefaultRankingController
 from oioioi.rankings.models import Ranking
 
-MAIN_KEY = "main"
-STALE_KEY = "stale"
-DAILY_KEY = "dzienne"
-AGGREGATE_KEYS = (MAIN_KEY, STALE_KEY, DAILY_KEY)
 PRIVILEGED_PERMISSIONS = ("admin", "observer")
 
 
@@ -50,6 +56,15 @@ def is_daily_submission(round, date):
     if round.is_trial or date < round.start_date:
         return False
     return round.end_date is None or date <= round.end_date
+
+
+def round_in_rankings(round, config, timestamp):
+    """Participants see a round in rankings once its results are shown
+    (or once it starts, if results are visible during rounds).
+    """
+    if config.results_visible_during_round:
+        return round.start_date <= timestamp
+    return round.results_date is not None and round.results_date <= timestamp
 
 
 class CzecieCampRegistrationController(ParticipantsController):
@@ -82,6 +97,8 @@ class CzecieCampContestController(ProgrammingContestController):
     def adjust_contest(self):
         super().adjust_contest()
         get_camp_config(self.contest)
+        if not self.contest.camp_rankings.exists():
+            create_default_rankings(self.contest)
 
     def can_submit(self, request, problem_instance, check_round_times=True):
         """Participants may submit to every round that has already started,
@@ -102,9 +119,9 @@ class CzecieCampContestController(ProgrammingContestController):
 
 
 class CzecieCampRankingController(DefaultRankingController):
-    """Rankings of a camp: k × Dzienne + l × Stałe (main), Stałe, Dzienne
-    and one for every round (Dzienne, or Stałe for an "All-time" round).
-    Rounds that are not counted only have their own ranking.
+    """Rankings of a camp, defined by ``CampRanking`` objects; a partial key
+    is the id of one. Each one sums, over its rounds, daily weight × Dzienne
+    + all-time weight × Stałe.
 
     A full key ends with a tag describing which rounds are public and whether
     the ranking is frozen, so a scheduled publication or the freeze yields
@@ -125,49 +142,32 @@ class CzecieCampRankingController(DefaultRankingController):
     def _state_tag(self, permission, timestamp):
         if permission in PRIVILEGED_PERMISSIONS:
             return "all"
-        rounds = sorted(r.id for r in self._iter_rounds(False, timestamp, None))
+        config = get_camp_config(self.contest)
+        rounds = sorted(r.id for r in self.contest.round_set.all() if round_in_rankings(r, config, timestamp))
         tag = "r" + "-".join(map(str, rounds))
-        if is_frozen(self.contest, get_camp_config(self.contest), timestamp):
+        if is_frozen(self.contest, config, timestamp):
             tag += "f"
         return tag
 
-    def _iter_rounds(self, can_see_all, timestamp, partial_key, request=None):
-        """Visible rounds of a ranking, or of all rankings for ``partial_key=None``."""
-        ccontroller = self.contest.controller
-        queryset = self.contest.round_set.all()
-        if partial_key in AGGREGATE_KEYS:
-            queryset = queryset.exclude(id__in=get_camp_config(self.contest).excluded_rounds)
-        elif partial_key is not None:
-            if not partial_key.isdigit():
-                return
-            queryset = queryset.filter(id=partial_key)
-        for round in ordered_rounds(self.contest, queryset):
-            times = ccontroller.get_round_times(request, round)
-            if can_see_all or times.public_results_visible(timestamp):
-                yield round
+    def _get_ranking(self, partial_key):
+        if not partial_key.isdigit():
+            return None
+        return CampRanking.objects.filter(contest=self.contest, id=partial_key).first()
 
-    def _rounds_for_key(self, key):
-        can_see_all = self._key_permission(key) in PRIVILEGED_PERMISSIONS
-        return self._iter_rounds(can_see_all, timezone.now(), self.get_partial_key(key))
+    def _visible_rounds(self, ranking, can_see_all, timestamp):
+        config = get_camp_config(self.contest)
+        return [r for r in ranking.get_rounds() if can_see_all or round_in_rankings(r, config, timestamp)]
 
     def available_rankings(self, request):
-        rounds = list(self._rounds_for_ranking(request, None))
-        if not rounds:
-            return []
-        config = get_camp_config(self.contest)
-        rankings = []
-        if any(r.id not in config.excluded_rounds for r in rounds):
-            if config.has_main_ranking():
-                rankings.append((MAIN_KEY, config.main_ranking_label()))
-            aggregate = [(STALE_KEY, _("All-time")), (DAILY_KEY, _("Daily"))]
-            if not config.stale_weight:
-                # Dzienne is the main ranking.
-                aggregate.reverse()
-            rankings += aggregate
-        return rankings + [(str(r.id), r.name) for r in rounds]
+        can_see_all = is_contest_basicadmin(request) or is_contest_observer(request)
+        return [
+            (str(ranking.id), ranking.name)
+            for ranking in ordered_rankings(self.contest)
+            if can_see_all or (ranking.public_date is not None and ranking.public_date <= request.timestamp)
+        ]
 
     def partial_keys_for_probleminstance(self, pi):
-        return list(AGGREGATE_KEYS) + [str(pi.round_id)]
+        return [str(pk) for pk in self.contest.camp_rankings.values_list("id", flat=True)]
 
     def invalidate_pi(self, pi):
         # Full keys contain a state tag, so we invalidate the whole contest.
@@ -186,21 +186,27 @@ class CzecieCampRankingController(DefaultRankingController):
         return reverse("submission", kwargs={"contest_id": self.contest.id, "submission_id": best[1]})
 
     def serialize_ranking(self, key):
-        partial_key = self.get_partial_key(key)
         now = timezone.now()
         config = get_camp_config(self.contest)
-        rounds = list(self._rounds_for_key(key))
+        privileged = self._key_permission(key) in PRIVILEGED_PERMISSIONS
+        ranking = self._get_ranking(self.get_partial_key(key))
+        rounds = self._visible_rounds(ranking, privileged, now) if ranking else []
         round_position = {round.id: i for i, round in enumerate(rounds)}
         pis = sorted(
             ProblemInstance.objects.filter(round__in=rounds).select_related("problem", "round"),
             key=lambda pi: (round_position[pi.round_id], pi.short_name),
         )
-        if partial_key == DAILY_KEY:
+        daily_weight = ranking.daily_weight if ranking else 0
+        stale_weight = ranking.stale_weight if ranking else 0
+        if not stale_weight:
+            # An "All-time" round has no daily points.
             pis = [pi for pi in pis if not pi.round.is_trial]
         pi_by_id = {pi.id: pi for pi in pis}
+        last_daily = ranking is not None and ranking.daily_scoring == SCORING_LAST
+        combined = daily_weight and stale_weight
 
         frozen_at = None
-        if self._key_permission(key) not in PRIVILEGED_PERMISSIONS and is_frozen(self.contest, config, now):
+        if not privileged and is_frozen(self.contest, config, now):
             frozen_at = get_freeze_date(self.contest, config)
         counting_end = config.counting_end_date
         stale_end = min((d for d in (counting_end, frozen_at) if d is not None), default=None)
@@ -214,23 +220,27 @@ class CzecieCampRankingController(DefaultRankingController):
                 score__isnull=False,
             )
             .only("id", "user_id", "problem_instance_id", "date", "score")
-            .order_by("date")
+            .order_by("date", "id")
         )
 
-        # (user_id, pi_id) -> (points, submission_id); earliest best one wins
+        # (user_id, pi_id) -> (points, submission_id); earliest best one wins,
+        # or the last one for Dzienne counting the last submission
         best_daily = {}
         best_stale = {}
         for submission in submissions:
             if counting_end is not None and submission.date > counting_end:
                 continue
             pi = pi_by_id[submission.problem_instance_id]
+            # E.g. sent before the round was moved later; only admins can submit early.
+            if submission.date < pi.round.start_date:
+                continue
             points = submission.score.to_int()
             cell_key = (submission.user_id, pi.id)
             if stale_end is None or submission.date <= stale_end:
                 if cell_key not in best_stale or points > best_stale[cell_key][0]:
                     best_stale[cell_key] = (points, submission.id)
             if is_daily_submission(pi.round, submission.date):
-                if cell_key not in best_daily or points > best_daily[cell_key][0]:
+                if last_daily or cell_key not in best_daily or points > best_daily[cell_key][0]:
                     best_daily[cell_key] = (points, submission.id)
 
         rows = []
@@ -243,52 +253,59 @@ class CzecieCampRankingController(DefaultRankingController):
                 stale = best_stale.get((user.id, pi.id))
                 daily_sum += daily[0] if daily else 0
                 stale_sum += stale[0] if stale else 0
-                show_stale = partial_key == STALE_KEY or (partial_key not in AGGREGATE_KEYS and pi.round.is_trial)
-                shown = stale if show_stale else daily
                 cell = {
                     "daily": daily[0] if daily else None,
                     "stale": stale[0] if stale else None,
-                    "value": shown[0] if shown else None,
-                    "url": self._submission_url(stale if partial_key == MAIN_KEY else shown),
+                    "url": self._submission_url(stale if stale_weight else daily),
                 }
-                if partial_key == MAIN_KEY and (daily or stale):
-                    cell["weighted_daily"] = config.daily_weight * (cell["daily"] or 0)
-                    cell["weighted_stale"] = config.stale_weight * (cell["stale"] or 0)
-                    cell["value"] = cell["weighted_daily"] + cell["weighted_stale"]
+                if combined:
+                    if daily or stale:
+                        cell["weighted_daily"] = daily_weight * (cell["daily"] or 0)
+                        cell["weighted_stale"] = stale_weight * (cell["stale"] or 0)
+                        cell["value"] = cell["weighted_daily"] + cell["weighted_stale"]
+                    else:
+                        cell["value"] = None
+                else:
+                    shown = stale if stale_weight else daily
+                    weight = stale_weight or daily_weight
+                    cell["value"] = weight * shown[0] if shown else None
                 cells.append(cell)
-            if partial_key == MAIN_KEY:
-                total = config.daily_weight * daily_sum + config.stale_weight * stale_sum
-            elif partial_key == STALE_KEY:
-                total = stale_sum
-            elif partial_key == DAILY_KEY:
-                total = daily_sum
-            else:
-                total = stale_sum if rounds and rounds[0].is_trial else daily_sum
             rows.append(
                 {
                     "user": user,
                     "cells": cells,
-                    "sum": total,
+                    "sum": daily_weight * daily_sum + stale_weight * stale_sum,
                     "daily_sum": daily_sum,
                     "stale_sum": stale_sum,
+                    "combined": bool(combined),
                 }
             )
 
         self._assign_places(rows, itemgetter("sum"))
         leader_sum = rows[0]["sum"] if rows else 0
+        gold, silver, bronze = medal_places(ranking.medals if ranking else MEDALS_NONE, len(rows))
         for row in rows:
             row["diff"] = row["sum"] - leader_sum
-            row["medal"] = row["place"] if row["place"] <= 3 and row["sum"] > 0 else None
+            row["percentage"] = 100 * row["sum"] / leader_sum if leader_sum else 0
+            row["medal"] = None
+            if row["sum"] > 0:
+                for medal, last_place in enumerate((gold, silver, bronze), start=1):
+                    if row["place"] <= last_place:
+                        row["medal"] = medal
+                        break
         return {
             "rows": rows,
             "problem_instances": self._get_pis_with_visibility(key, pis),
             "participants_on_page": getattr(settings, "PARTICIPANTS_ON_PAGE", 100),
-            "is_main": partial_key == MAIN_KEY,
-            "is_aggregate": partial_key in AGGREGATE_KEYS,
-            "daily_weight": config.daily_weight,
-            "stale_weight": config.stale_weight,
+            "is_main": bool(combined),
+            "is_aggregate": ranking is not None and ranking.round_id is None,
+            "show_sum": ranking is None or ranking.show_sum,
+            "show_percentage": ranking is not None and ranking.show_percentage,
+            "show_difference": ranking is not None and ranking.show_difference,
+            "daily_weight": daily_weight,
+            "stale_weight": stale_weight,
             "frozen_at": frozen_at,
-            "frozen_for_participants": self._key_permission(key) in PRIVILEGED_PERMISSIONS and is_frozen(self.contest, config, now),
+            "frozen_for_participants": privileged and is_frozen(self.contest, config, now),
         }
 
     def _render_ranking_page(self, key, data, page):
@@ -300,12 +317,12 @@ class CzecieCampRankingController(DefaultRankingController):
     def _get_csv_header(self, key, data):
         header = [_("No."), _("Login"), _("First name"), _("Last name"), _("Sum")]
         if data["is_main"]:
-            header += [_("Daily"), _("All-time")]
+            header += [DAILY_NAME, STALE_NAME]
         for pi, _statement_visible in data["problem_instances"]:
             if data["is_main"]:
                 header += [
-                    "{} ({})".format(pi.get_short_name_display(), _("Daily")),
-                    "{} ({})".format(pi.get_short_name_display(), _("All-time")),
+                    f"{pi.get_short_name_display()} ({DAILY_NAME})",
+                    f"{pi.get_short_name_display()} ({STALE_NAME})",
                 ]
             else:
                 header.append(pi.get_short_name_display())
@@ -319,7 +336,7 @@ class CzecieCampRankingController(DefaultRankingController):
             row["user"].last_name,
             row["sum"],
         ]
-        if self.get_partial_key(key) == MAIN_KEY:
+        if row["combined"]:
             line += [row["daily_sum"], row["stale_sum"]]
             for cell in row["cells"]:
                 line += [_blank_if_none(cell["daily"]), _blank_if_none(cell["stale"])]
