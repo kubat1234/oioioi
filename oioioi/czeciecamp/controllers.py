@@ -74,6 +74,9 @@ class CzecieCampRegistrationController(ParticipantsController):
 class CzecieCampContestController(ProgrammingContestController):
     description = _("Czecie Camp Contest")
     create_forum = False
+    # A problem without a round is hidden from participants (only admins can
+    # submit to it), e.g. extra problems that are not used yet.
+    allow_problems_without_round = True
     scoring_description = _(
         "The submissions are scored on a set of groups of test cases.\n"
         "Participants may submit to a round after it ends. The daily ranking counts only submissions "

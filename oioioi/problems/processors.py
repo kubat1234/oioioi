@@ -14,6 +14,9 @@ def dangling_problems_processor(request):
         return {}
     if not is_contest_basicadmin(request):
         return {}
+    # Contests where a problem may wait without a round, hidden from participants.
+    if getattr(request.contest.controller, "allow_problems_without_round", False):
+        return {}
 
     dangling_pis = ProblemInstance.objects.filter(contest=request.contest, round__isnull=True)
     count = dangling_pis.count()

@@ -143,7 +143,7 @@ class ProblemInstanceForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if instance and not instance.contest.is_archived:
             self.fields["round"].queryset = instance.contest.round_set
-            self.fields["round"].required = True
+            self.fields["round"].required = not getattr(instance.contest.controller, "allow_problems_without_round", False)
 
 
 class SubmissionForm(forms.Form):

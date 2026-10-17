@@ -618,6 +618,51 @@ class TestCampPanel(CampTestCase):
         self.assertContains(response, "Dzienne + Stałe")
 
 
+class TestProblemsWithoutRound(CampTestCase):
+    def setUp(self):
+        super().setUp()
+        self.pi2.round = None
+        self.pi2.save()
+
+    def _request(self, user):
+        request = RequestFactory().get("/")
+        request.user = user
+        request.contest = self.contest
+        request.timestamp = _date(10)
+        return request
+
+    def test_round_not_required_and_no_warning(self):
+        from django.forms import modelform_factory
+
+        from oioioi.contests.forms import ProblemInstanceForm
+        from oioioi.problems.processors import dangling_problems_processor
+
+        ProblemInstanceForm = modelform_factory(ProblemInstance, form=ProblemInstanceForm, fields=["round"])  # noqa: N806
+
+        self.assertFalse(ProblemInstanceForm(instance=self.pi2).fields["round"].required)
+        request = self._request(User.objects.get(username="test_admin"))
+        self.assertEqual(dangling_problems_processor(request), {})
+
+        other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        pi = ProblemInstance.objects.create(problem=self.pi2.problem, contest=other, short_name="xyz")
+        self.assertTrue(ProblemInstanceForm(instance=pi).fields["round"].required)
+        request.contest = other
+        self.assertIn("extra_navbar_right_dangling_problems", dangling_problems_processor(request))
+
+    def test_hidden_from_participants(self):
+        self._submit(self.user1, self.pi2, _date(2, hour=1), 70)
+        controller = self.contest.controller
+        self.assertFalse(controller.can_submit(self._request(self.user1), self.pi2))
+        self.assertTrue(controller.can_submit(self._request(User.objects.get(username="test_admin")), self.pi2))
+        for username in ("test_user", "test_admin"):
+            self.assertTrue(self.client.login(username=username))
+            for url in ("problems_list", "my_submissions", "default_ranking"):
+                self.assertEqual(self.client.get(reverse(url, kwargs={"contest_id": self.contest.id})).status_code, 200, (username, url))
+        self.assertNotContains(self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id})), "PROBLEM WITHOUT ROUND")
+        # Not in any ranking.
+        self.assertNotIn(self.pi2, [pi for pi, _visible in self._ranking(self.stale, "admin")["problem_instances"]])
+
+
 class TestCreateCamp(TestCase):
     fixtures = ["test_users"]
 
