@@ -211,7 +211,10 @@ class CzecieCampRankingController(DefaultRankingController):
         counting_end = config.counting_end_date
         stale_end = min((d for d in (counting_end, frozen_at) if d is not None), default=None)
 
+        hidden_users = set(config.hidden_users)
         users = list(self.filter_users_for_ranking(key, User.objects.all()).distinct().order_by("last_name", "first_name", "username"))
+        if not privileged:
+            users = [user for user in users if user.id not in hidden_users]
         submissions = (
             Submission.objects.filter(
                 problem_instance__in=pis,
@@ -278,17 +281,24 @@ class CzecieCampRankingController(DefaultRankingController):
                     "daily_sum": daily_sum,
                     "stale_sum": stale_sum,
                     "combined": bool(combined),
+                    "hidden": user.id in hidden_users,
                 }
             )
 
-        self._assign_places(rows, itemgetter("sum"))
-        leader_sum = rows[0]["sum"] if rows else 0
-        gold, silver, bronze = medal_places(ranking.medals if ranking else MEDALS_NONE, len(rows))
+        # Hidden participants (shown only to admins) get no place or medal.
+        shown = [row for row in rows if not row["hidden"]]
+        self._assign_places(shown, itemgetter("sum"))
+        for row in rows:
+            if row["hidden"]:
+                row["place"] = None
+        rows.sort(key=itemgetter("sum"), reverse=True)
+        leader_sum = shown[0]["sum"] if shown else 0
+        gold, silver, bronze = medal_places(ranking.medals if ranking else MEDALS_NONE, len(shown))
         for row in rows:
             row["diff"] = row["sum"] - leader_sum
             row["percentage"] = 100 * row["sum"] / leader_sum if leader_sum else 0
             row["medal"] = None
-            if row["sum"] > 0:
+            if row["sum"] > 0 and not row["hidden"]:
                 for medal, last_place in enumerate((gold, silver, bronze), start=1):
                     if row["place"] <= last_place:
                         row["medal"] = medal
@@ -330,7 +340,7 @@ class CzecieCampRankingController(DefaultRankingController):
 
     def _get_csv_row(self, key, row):
         line = [
-            row["place"],
+            _blank_if_none(row["place"]),
             row["user"].username,
             row["user"].first_name,
             row["user"].last_name,

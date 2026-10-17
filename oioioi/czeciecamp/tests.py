@@ -261,6 +261,18 @@ class TestCampRankings(CampTestCase):
         row = self.rcontroller._get_csv_row(key, self._row(data, self.user1))
         self.assertEqual(row[1:7], ["test_user", "Test", "User", 100, 50, 50])
 
+    def test_hidden_participant(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 100)
+        self._submit(self.user2, self.pi1, _date(1, hour=1), 50)
+        config = get_camp_config(self.contest)
+        config.hidden_users = [self.user1.id]
+        config.save()
+        data = self._ranking(self.daily)
+        self.assertEqual([(row["user"], row["place"], row["medal"]) for row in data["rows"]], [(self.user2, 1, 1)])
+        data = self._ranking(self.daily, "admin")
+        self.assertEqual([(row["user"], row["place"], row["medal"]) for row in data["rows"]], [(self.user1, None, None), (self.user2, 1, 1)])
+        self.assertEqual(self._row(data, self.user1)["diff"], 50)
+
     def test_negative_weight(self):
         self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
         self._submit(self.user1, self.pi1, _date(1, hour=7), 80)
@@ -470,6 +482,17 @@ class TestCampPanel(CampTestCase):
         self.assertTrue(get_camp_config(self.contest).rankings_unfrozen)
         self.client.post(self._url("czeciecamp_freeze"))
         self.assertFalse(get_camp_config(self.contest).rankings_unfrozen)
+
+    def test_hide_participant_in_rankings(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        self.client.post(self._url("czeciecamp_hide_participant", user_id=self.user1.id))
+        self.assertEqual(get_camp_config(self.contest).hidden_users, [self.user1.id])
+        self.assertContains(self.client.get(self._url("czeciecamp_panel")), "test_user")
+        self.client.post(self._url("czeciecamp_show_participant", user_id=self.user1.id))
+        self.assertEqual(get_camp_config(self.contest).hidden_users, [])
+        # Only participants of the contest.
+        response = self.client.post(self._url("czeciecamp_hide_participant", user_id=self.outsider.id))
+        self.assertEqual(response.status_code, 404)
 
     def test_add_participants(self):
         self.assertTrue(self.client.login(username="test_admin"))

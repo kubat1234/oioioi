@@ -389,3 +389,24 @@ msgstr "pokaż procent sumy lidera"
 
 msgid "show difference to the leader"
 msgstr "pokaż różnicę do lidera"
+
+msgid "participants hidden in rankings"
+msgstr "uczestnicy ukryci w rankingach"
+
+msgid "Hidden in rankings, only admins see this row."
+msgstr "Ukryty w rankingach, ten wiersz widzą tylko admini."
+
+msgid "Participant"
+msgstr "Uczestnik"
+
+msgid "In rankings"
+msgstr "W rankingach"
+
+msgid "Hidden participants can submit as usual, but they are not in the rankings. Admins see them greyed out."
+msgstr "Ukryci uczestnicy normalnie wysyłają zgłoszenia, ale nie ma ich w rankingach. Admini widzą ich wyszarzonych."
+
+msgid "hidden"
+msgstr "ukryty"
+
+msgid "show"
+msgstr "pokaż"

@@ -49,6 +49,9 @@ class CzecieCampConfig(models.Model):
     # Ids of rounds left out of the Daily, All-time and main rankings.
     # They still have their own ranking.
     excluded_rounds = models.JSONField(default=list, blank=True, verbose_name=_("rounds not counted"))
+    # Ids of users who are participants, but are left out of all rankings
+    # (e.g. remote participants, guests); admins still see them, greyed out.
+    hidden_users = models.JSONField(default=list, blank=True, verbose_name=_("participants hidden in rankings"))
 
     class Meta:
         verbose_name = _("Czecie camp config")

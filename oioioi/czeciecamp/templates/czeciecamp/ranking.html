@@ -35,8 +35,8 @@
             </thead>
             <tbody>
                 {% for row in rows %}
-                    <tr id="ranking_row_{{ row.user.id }}"{% if row.medal %} class="camp-medal-{{ row.medal }}"{% endif %}>
-                        <td class="text-end">{{ row.place }}</td>
+                    <tr id="ranking_row_{{ row.user.id }}"{% if row.medal %} class="camp-medal-{{ row.medal }}"{% elif row.hidden %} class="camp-hidden-row" title="{% trans 'Hidden in rankings, only admins see this row.' %}"{% endif %}>
+                        <td class="text-end">{{ row.place|default_if_none:"–" }}</td>
                         <td class="user-cell">{% public_name row.user %}</td>
                         {% if show_sum %}<td class="text-end sum-cell"><strong>{{ row.sum }}</strong></td>{% endif %}
                         {% if show_percentage %}<td class="text-end text-muted">{{ row.percentage|floatformat:2 }}</td>{% endif %}

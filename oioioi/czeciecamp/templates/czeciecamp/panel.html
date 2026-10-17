@@ -264,7 +264,7 @@
     </div>
 </form>
 
-<h2 class="h4 mt-4">{% trans "Participants" %} ({{ participants|length }})</h2>
+<h2 class="h4 mt-4" id="participants">{% trans "Participants" %} ({{ participants|length }})</h2>
 <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="participants">
@@ -275,9 +275,42 @@
     <a class="btn btn-link mt-2" href="{% url 'oioioiadmin:participants_participant_changelist' %}">{% trans "Manage participants" %}</a>
 </form>
 {% if participants %}
-    <p class="mt-3 small">
-        {% for participant in participants %}{{ participant.user.get_full_name|default:participant.user.username }}{% if not forloop.last %}, {% endif %}{% endfor %}
-    </p>
+<div class="table-responsive mt-3">
+<table class="table table-sm align-middle w-auto">
+    <thead>
+        <tr>
+            <th>{% trans "Participant" %}</th>
+            <th>{% trans "Login" %}</th>
+            <th title="{% trans 'Hidden participants can submit as usual, but they are not in the rankings. Admins see them greyed out.' %}">{% trans "In rankings" %}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for participant in participants %}
+            {% with user=participant.user %}
+            <tr{% if user.id in hidden_users %} class="text-muted"{% endif %}>
+                <td>{{ user.get_full_name|default:user.username }}{% if participant.status != "ACTIVE" %} <span class="badge bg-secondary">{{ participant.get_status_display }}</span>{% endif %}</td>
+                <td>{{ user.username }}</td>
+                <td class="text-nowrap">
+                    {% if user.id in hidden_users %}
+                        <form method="post" action="{% url 'czeciecamp_show_participant' contest_id=contest.id user_id=user.id %}" class="d-inline">
+                            {% csrf_token %}
+                            {% trans "hidden" %}
+                            <button type="submit" class="btn btn-link btn-sm p-0 ms-1">{% trans "show" %}</button>
+                        </form>
+                    {% else %}
+                        <form method="post" action="{% url 'czeciecamp_hide_participant' contest_id=contest.id user_id=user.id %}" class="d-inline">
+                            {% csrf_token %}
+                            <span class="text-success">✔</span>
+                            <button type="submit" class="btn btn-link btn-sm p-0 ms-1">{% trans "hide" %}</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endwith %}
+        {% endfor %}
+    </tbody>
+</table>
+</div>
 {% endif %}
 <script>
 (function () {

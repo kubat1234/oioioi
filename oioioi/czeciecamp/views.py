@@ -169,6 +169,7 @@ def panel_view(request):
         "settings_form": settings_form,
         "participants_form": participants_form,
         "participants": Participant.objects.filter(contest=contest).select_related("user").order_by("user__last_name", "user__first_name"),
+        "hidden_users": set(config.hidden_users),
         "rounds": _round_rows(contest, config, now),
         "rankings": _ranking_rows(contest, now),
         "ranking_moves": [("up", "▲", _("Move up")), ("down", "▼", _("Move down"))],
@@ -274,6 +275,24 @@ def save_rounds_view(request):
     Ranking.invalidate_contest(contest)
     messages.success(request, _("Rounds saved."))
     return redirect(_panel_url(contest))
+
+
+@require_POST
+@enforce_condition(contest_exists & is_contest_basicadmin & is_czecie_camp)
+def participant_ranking_view(request, user_id, hidden):
+    """Hides a participant in rankings or shows them again."""
+    contest = request.contest
+    participant = get_object_or_404(Participant, contest=contest, user_id=user_id)
+    config = get_camp_config(contest)
+    hidden_users = set(config.hidden_users)
+    if hidden:
+        hidden_users.add(participant.user_id)
+    else:
+        hidden_users.discard(participant.user_id)
+    config.hidden_users = sorted(hidden_users)
+    config.save()
+    Ranking.invalidate_contest(contest)
+    return redirect(_panel_url(contest) + "#participants")
 
 
 def _update_round_ranking(form):
