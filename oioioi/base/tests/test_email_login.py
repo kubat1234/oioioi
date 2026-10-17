@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.urls import reverse
 
+from oioioi.base.forms import OioioiUserChangeForm, RegistrationFormWithNames, UserForm
 from oioioi.base.tests import TestCase
 
 
@@ -44,3 +45,44 @@ class TestEmailLogin(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.id)
+
+
+class TestUniqueEmail(TestCase):
+    fixtures = ["test_users"]
+
+    def test_registration(self):
+        data = {
+            "username": "nowy",
+            "first_name": "Jan",
+            "last_name": "Nowy",
+            "email": "TEST_USER@example.com",
+            "password1": "x8gH2kq!Lp",
+            "password2": "x8gH2kq!Lp",
+        }
+        form = RegistrationFormWithNames(data)
+        form.is_valid()
+        self.assertIn("email", form.errors)
+        user = User.objects.get(username="test_user")
+        user.email = "jan.nowy@gmail.com"
+        user.save()
+        data["email"] = "JanNowy+sio@gmail.com"
+        form = RegistrationFormWithNames(data)
+        form.is_valid()
+        self.assertIn("email", form.errors)
+        data["email"] = "nowy@example.com"
+        form = RegistrationFormWithNames(data)
+        form.is_valid()
+        self.assertNotIn("email", form.errors)
+
+    def test_change_email(self):
+        user = User.objects.get(username="test_user")
+        data = {"username": "test_user", "first_name": "Test", "last_name": "User", "email": "test_user2@example.com"}
+        self.assertIn("email", UserForm(data, instance=user).errors)
+        data["email"] = "test_user@example.com"
+        self.assertNotIn("email", UserForm(data, instance=user).errors)
+        data["email"] = "test_user3@example.com"
+        self.assertIn("email", OioioiUserChangeForm(data, instance=user).errors)
+
+    def test_username_cannot_contain_at(self):
+        data = {"username": "jan@x", "first_name": "Jan", "last_name": "Nowy", "email": "jan@example.com"}
+        self.assertIn("username", RegistrationFormWithNames(data).errors)

@@ -19,7 +19,7 @@ from registration.forms import RegistrationForm
 
 from oioioi.base.models import Consents, PreferencesSaved
 from oioioi.base.preferences import PreferencesFactory, ensure_preferences_exist_for_user
-from oioioi.base.utils.user import UNICODE_CATEGORY_LIST, USERNAME_REGEX
+from oioioi.base.utils.user import UNICODE_CATEGORY_LIST, USERNAME_REGEX, users_with_email
 from oioioi.base.utils.validators import UnicodeValidator, ValidationError
 
 
@@ -28,6 +28,21 @@ def adjust_username_field(form):
     form.fields["username"].error_messages["invalid"] = _("Invalid username")
     form.fields["username"].help_text = help_text
     form.fields["username"].validators += [RegexValidator(regex=USERNAME_REGEX)]
+
+
+def validate_unique_email(email, instance=None):
+    """An e-mail identifies an account (it can be used to log in), so it
+    must not reach the mailbox of another one (see ``canonical_email``).
+    """
+    if not email:
+        return email
+    others = User.objects.all()
+    if instance is not None and instance.pk is not None:
+        others = others.exclude(pk=instance.pk)
+    if users_with_email(email, others):
+        # The message of django-registration's unique e-mail form, it is translated there.
+        raise ValidationError(_("This email address is already in use. Please supply a different email address."))
+    return email
 
 
 def adjust_name_fields(form):
@@ -191,6 +206,9 @@ class RegistrationFormWithNames(RegistrationForm):
         self.fields.update({"captcha": CaptchaField(label="", widget=CustomCaptchaTextInput)})
         adjust_name_fields(self)
 
+    def clean_email(self):
+        return validate_unique_email(self.cleaned_data["email"])
+
 
 class UserForm(forms.ModelForm):
     class Meta:
@@ -219,6 +237,9 @@ class UserForm(forms.ModelForm):
             return instance.username
         else:
             return self.cleaned_data["username"]
+
+    def clean_email(self):
+        return validate_unique_email(self.cleaned_data["email"], self.instance)
 
     def save(self, *args, **kwargs):
         instance = super().save(*args, **kwargs)
@@ -265,6 +286,9 @@ class OioioiUserChangeForm(UserChangeForm):
         adjust_username_field(self)
         adjust_name_fields(self)
         self.fields["user_permissions"].queryset = Permission.objects.filter(codename="can_modify_tags")
+
+    def clean_email(self):
+        return validate_unique_email(self.cleaned_data["email"], self.instance)
 
 
 class OioioiPasswordResetForm(PasswordResetForm):
