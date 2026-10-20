@@ -1,3 +1,30 @@
+=====================================
+OIOIOI – III LO Tarnów SIO2
+=====================================
+
+Fork of `SIO2/OIOIOI <https://github.com/sio2project/oioioi>`__, the contest system of the
+Polish Olympiad in Informatics, adapted for olympiad training camps and used in production
+by ~200 participants per camp.
+
+What this fork adds
+-------------------
+
+All changes live in the ``oioioi/czeciecamp`` app
+(`full diff vs upstream <https://github.com/sio2project/oioioi/compare/master...kubat1234:oioioi:czecie-camp>`__):
+
+- **Custom camp rankings** – configurable per-camp rankings with round types and weights,
+  editable from the UI.
+- **Camp management panel** – one place to manage rounds, rankings, participants and
+  settings instead of the Django admin.
+- **Automation** – participant setup, ranking creation and results publishing.
+- **Login by username or e-mail.**
+
+*Original OIOIOI README below.*
+
+----
+
+
+
 ======
 OIOIOI
 ======
