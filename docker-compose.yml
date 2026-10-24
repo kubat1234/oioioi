@@ -48,6 +48,9 @@ services:
       FILETRACKER_LISTEN_PORT: '9999'
     ports:
       - "${SIO_PORT:-8888}:8000"
+      # sioworkersd and filetracker for workers on other machines (no authentication).
+      - "${SIO_WORKERS_BIND:-127.0.0.1}:7888:7888"
+      - "${SIO_WORKERS_BIND:-127.0.0.1}:9999:9999"
     volumes:
       - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/filetracker:/sio2/deployment/media
       - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/settings.py:/sio2/deployment/settings.py
