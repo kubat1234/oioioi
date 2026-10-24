@@ -65,5 +65,7 @@ services:
       <<: *common-envs
       WEB_URL: 'web:8000'
     cap_add: [ALL]
+    # sio2jail mounts inside the container, which the default AppArmor profile denies.
+    security_opt: [apparmor=unconfined]
     depends_on: [web]
     stop_grace_period: 1m
