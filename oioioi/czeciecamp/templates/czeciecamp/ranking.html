@@ -42,15 +42,18 @@
                         {% if show_percentage %}<td class="text-end text-muted">{{ row.percentage|floatformat:2 }}</td>{% endif %}
                         {% if show_difference %}<td class="text-end text-muted">{% if row.diff %}{{ row.diff }}{% endif %}</td>{% endif %}
                         {% for cell in row.cells %}
-                            <td class="text-end"{% if cell.disqualified %} title="{% trans 'A submission to this problem is disqualified; the problem counts 0.' %}"{% endif %}>
+                            <td class="text-end{% if cell.after_freeze %} camp-after-freeze{% endif %}"{% if cell.disqualified %} title="{% trans 'A submission to this problem is disqualified; the problem counts 0.' %}"{% endif %}>
                                 {% if cell.disqualified %}<span class="badge text-bg-danger">DQ</span>{% endif %}
                                 {% if is_admin and cell.url %}<a href="{{ cell.url }}">{% endif %}
                                 {% if is_main %}
                                     {% if cell.daily is not None or cell.stale is not None %}
-                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">Dzienne: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>Stałe: {{ stale_weight }}×{{ cell.stale|default_if_none:0 }} = {{ cell.weighted_stale }}</span></div>
+                                        <div class="camp-combined">{{ cell.value }}<span class="camp-combined-tooltip">Dzienne: {{ daily_weight }}×{{ cell.daily|default_if_none:0 }} = {{ cell.weighted_daily }}<br>Stałe: {{ stale_weight }}×{{ cell.stale|default_if_none:0 }} = {{ cell.weighted_stale }}{% if cell.after_freeze %}<br>{{ cell.after_freeze_text }}{% endif %}</span></div>
+                                    {% elif cell.after_freeze %}
+                                        <span class="camp-combined-tooltip">{{ cell.after_freeze_text }}</span>
                                     {% endif %}
                                 {% else %}
                                     {{ cell.value|default_if_none:'' }}
+                                    {% if cell.after_freeze %}<span class="camp-combined-tooltip">{{ cell.after_freeze_text }}</span>{% endif %}
                                 {% endif %}
                                 {% if is_admin and cell.url %}</a>{% endif %}
                             </td>
