@@ -91,6 +91,9 @@ _WORD_RE = re.compile(r"[A-Za-zÀ-ž]+")
 _CAMEL_RE = re.compile(r"[a-z][A-Z]")
 _NUMBER_RE = re.compile(r"(0[xX][0-9a-fA-F]+|\d+\.?\d*([eE][+-]?\d+)?)[uUlLfF]*")
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+# Names in other alphabets (Polish letters, text pasted with the code): a
+# separate pattern, so that ASCII names are read exactly as before.
+_UNICODE_IDENT_RE = re.compile(r"[^\W\d]\w*")
 _OPERATORS = sorted(
     "<<= >>= ... -> ++ -- << >> <= >= == != && || += -= *= /= %= &= |= ^= :: := ** // ->".split(),
     key=len,
@@ -201,14 +204,17 @@ def lex(source, language):
             tokens.append(("str", source[i + 1 : j]))
             i = j + 1
             continue
+        # isdigit() and isalpha() are true for more than the patterns match
+        # ("²", "①", "ę"): such characters fall through to the operators.
+        match = None
         if c.isdigit():
             match = _NUMBER_RE.match(source, i)
-            tokens.append(("num", match.group(0)))
-            i = match.end()
-            continue
-        if c.isalpha() or c == "_":
-            match = _IDENT_RE.match(source, i)
-            tokens.append(("id", match.group(0)))
+            kind = "num"
+        elif c.isalpha() or c == "_":
+            match = _IDENT_RE.match(source, i) or _UNICODE_IDENT_RE.match(source, i)
+            kind = "id"
+        if match:
+            tokens.append((kind, match.group(0)))
             i = match.end()
             continue
         for op in _OPERATORS:

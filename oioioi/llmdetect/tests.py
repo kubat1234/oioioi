@@ -929,6 +929,10 @@ class TestReferencesPage(LLMDetectTestCase):
         self.assertEqual(LLMReferenceSolution.objects.count(), 0)
 
 
+def habits_of(source):
+    return extract_habits(source, F.C_FAMILY)["values"]
+
+
 class TestHostileCode(SimpleTestCase):
     """Participants control the code that is analysed on every submission
     (in the web request for pasted code, in the evaluation worker after
@@ -940,6 +944,26 @@ class TestHostileCode(SimpleTestCase):
     def _analyse(self, source, filename="a.cpp"):
         analysis = F.analyze_source(source, filename)
         return analysis, extract_habits(source, analysis["language"])
+
+    def test_letters_and_digits_of_other_alphabets(self):
+        # Text pasted above the code, outside a comment: "ę" is a letter and
+        # "²" a digit for Python, but not for the ASCII patterns of the lexer.
+        source = "11:34\nżółć gęślą jaźń ☺\ufe0f🙉 x² ① ٣\n#include <iostream>\nusing namespace std;\nint main(){int n;cin>>n;}\n"
+        for filename in ("a.cpp", "a.py", "a.pas"):
+            analysis, habits = self._analyse(source, filename)
+            self.assertGreater(analysis["code_lines"], 0)
+        tokens, _comments = F.lex(source, F.C_FAMILY)
+        self.assertIn(("id", "żółć"), tokens)
+        self.assertIn(("op", "①"), tokens)
+        self.assertEqual(habits_of(source)["namespace"], "using namespace std;")
+
+    def test_random_text_never_breaks_the_analysis(self):
+        alphabet = list("ax_09 \t\n;{}()<>=+-*/#\"'\\") + list("ąęŁÓ☺🙉²①٣\u00a0\u200b\u0301ß日") + ["//", "/*", "*/", "#include", "1e9", "0x1F"]
+        rng = random.Random(3)
+        for _ in range(500):
+            source = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 80)))
+            for filename in ("a.cpp", "a.py", "a.pas"):
+                self._analyse(source, filename)
 
     def test_no_quadratic_patterns(self):
         n = self.N
@@ -1490,6 +1514,16 @@ class TestFiletrackerSources(LLMDetectTestCase):
         # As FiletrackerStorage._open returns it.
         submission.source_file.file = File(_StreamWithoutClose(HUMAN_BFS.encode()), submission.source_file.name)
         self.assertEqual(read_source(submission), HUMAN_BFS)
+
+
+class TestTextAboveTheCode(LLMDetectTestCase):
+    def test_submission_with_polish_text_and_emoji_is_assessed(self):
+        source = '11:34\nżółć gęślą jaźń ☺\ufe0f🙉\n#include <iostream>\nusing namespace std;\nint main(){string s=" ";cin>>s;}\n'
+        submission = self._submit(self.humans[0], self.pis[0], source, minutes=10)
+        self._submit(self.humans[1], self.pis[0], HUMAN_BFS, minutes=20)
+        assess_contest(self.contest)
+        self.assertEqual(get_config(self.contest).read_errors, 0)
+        self.assertTrue(RiskAssessment.objects.filter(submission=submission).exists())
 
 
 class TestLineEndingsOfOldSubmissions(LLMDetectTestCase):
