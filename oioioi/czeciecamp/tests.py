@@ -10,6 +10,7 @@ from django.utils import timezone
 from oioioi.base.tests import TestCase, fake_time
 from oioioi.contests.models import Contest, ProblemInstance, Round, ScoreReport, Submission, SubmissionReport
 from oioioi.contests.scores import IntegerScore
+from oioioi.czeciecamp.controllers import after_freeze_text
 from oioioi.czeciecamp.forms import make_contest_id
 from oioioi.czeciecamp.models import (
     MEDALS_IOI,
@@ -423,6 +424,63 @@ class TestCampFreeze(CampTestCase):
         self._submit(self.user1, self.pi1, _date(1, hour=4), 100)
         self.assertEqual(self._row(self._ranking(self.stale), self.user1)["sum"], 50)
         self.assertEqual(self._row(self._ranking(self.stale, "admin"), self.user1)["sum"], 100)
+
+    def _cell(self, data, user, pi):
+        pis = [p for p, _visible in data["problem_instances"]]
+        return self._row(data, user)["cells"][pis.index(pi)]
+
+    def test_submissions_after_freeze_are_marked(self):
+        self._submit(self.user1, self.pi1, _date(1, hour=1), 50)
+        self._submit(self.user1, self.pi1, _date(3), 100)
+        self._submit(self.user1, self.pi1, _date(4), 0)
+        # Not judged yet, still marked: the mark tells nothing about the result.
+        Submission.objects.create(user=self.user2, problem_instance=self.pi2, date=_date(3), kind="NORMAL")
+        self._submit(self.user2, self.pi1, _date(3), 100, kind="IGNORED")
+
+        stale = self._ranking(self.stale)
+        cell = self._cell(stale, self.user1, self.pi1)
+        self.assertEqual((cell["value"], cell["after_freeze"]), (50, 2))
+        cell = self._cell(stale, self.user2, self.pi2)
+        self.assertEqual((cell["value"], cell["after_freeze"]), (None, 1))
+        self.assertEqual(self._cell(stale, self.user2, self.pi1)["after_freeze"], 0)
+        self.assertEqual(self._cell(self._ranking(self.main), self.user1, self.pi1)["after_freeze"], 2)
+        # Dzienne are not frozen, admins see the live ranking.
+        self.assertEqual(self._cell(self._ranking(self.daily), self.user1, self.pi1)["after_freeze"], 0)
+        self.assertEqual(self._cell(self._ranking(self.stale, "admin"), self.user1, self.pi1)["after_freeze"], 0)
+
+        html = self.rcontroller._render_ranking_page(f"regular#{self.main.id}#test", self._ranking(self.main), 1)
+        self.assertEqual(html.count("camp-after-freeze"), 2)
+        self.assertIn("Po zamrożeniu: 2 zgłoszenia", html)
+        self.assertIn("Po zamrożeniu: 1 zgłoszenie", html)
+        # Stałe alone: the cell keeps its frozen points and gets the same mark.
+        html = self.rcontroller._render_ranking_page(f"regular#{self.stale.id}#test", stale, 1)
+        self.assertEqual(html.count("camp-after-freeze"), 2)
+        self.assertIn("Po zamrożeniu: 2 zgłoszenia", html)
+
+        config = get_camp_config(self.contest)
+        config.rankings_unfrozen = True
+        config.save()
+        self.assertEqual(self._cell(self._ranking(self.stale), self.user1, self.pi1)["after_freeze"], 0)
+
+    def test_after_freeze_text(self):
+        for count, text in ((1, "1 zgłoszenie"), (3, "3 zgłoszenia"), (5, "5 zgłoszeń"), (12, "12 zgłoszeń"), (22, "22 zgłoszenia")):
+            self.assertEqual(after_freeze_text(count), f"Po zamrożeniu: {text}")
+
+    def test_disqualified_problem_is_not_marked(self):
+        cheated = self._submit(self.user1, self.pi1, _date(1, hour=1), 100)
+        self._submit(self.user1, self.pi1, _date(3), 100)
+        Disqualification.objects.create(contest=self.contest, user=self.user1, submission=cheated, title="LLM", content="Generated code.")
+        cell = self._cell(self._ranking(self.stale), self.user1, self.pi1)
+        self.assertTrue(cell["disqualified"])
+        self.assertEqual(cell["after_freeze"], 0)
+
+    def test_submissions_after_counting_end_are_not_marked(self):
+        config = get_camp_config(self.contest)
+        config.counting_end_date = _date(4)
+        config.save()
+        self._submit(self.user1, self.pi1, _date(3), 100)
+        self._submit(self.user1, self.pi1, _date(5), 100)
+        self.assertEqual(self._cell(self._ranking(self.stale), self.user1, self.pi1)["after_freeze"], 1)
 
 
 class TestCampSubmitting(CampTestCase):

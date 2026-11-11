@@ -1,3 +1,5 @@
+$camp-after-freeze-bg: #fff3c4;
+
 .table-ranking {
   &.camp-ranking {
     width: auto;
@@ -61,7 +63,16 @@
     border-style: solid;
     border-color: transparent transparent black transparent;
   }
-  .camp-combined:hover .camp-combined-tooltip {
+  .camp-combined:hover .camp-combined-tooltip,
+  .camp-after-freeze:hover .camp-combined-tooltip {
     visibility: visible;
+  }
+  // Someone submitted after the freeze; the points shown are from before it.
+  // Bootstrap paints stripes with an inset box-shadow, so the color goes there too.
+  .camp-after-freeze {
+    --bs-table-bg-state: #{$camp-after-freeze-bg};
+    position: relative;
+    cursor: help;
+    background-color: $camp-after-freeze-bg !important;
   }
 }

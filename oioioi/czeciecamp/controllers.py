@@ -1,3 +1,4 @@
+from collections import Counter
 from operator import itemgetter  # pylint: disable=E0611
 
 from django.conf import settings
@@ -52,6 +53,17 @@ def is_frozen(contest, config, timestamp):
         return False
     freeze_date = get_freeze_date(contest, config)
     return freeze_date is not None and timestamp >= freeze_date
+
+
+def after_freeze_text(count):
+    """Polish, like the names Dzienne and Stałe."""
+    if count == 1:
+        noun = "zgłoszenie"
+    elif count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        noun = "zgłoszenia"
+    else:
+        noun = "zgłoszeń"
+    return f"Po zamrożeniu: {count} {noun}"
 
 
 def is_daily_submission(round, date):
@@ -282,6 +294,17 @@ class CzecieCampRankingController(DefaultRankingController):
                 problems.add((user_id, pi_id))
         return users, problems
 
+    def _count_after_freeze(self, pis, users, frozen_at, counting_end):
+        """Counts the submissions sent after the freeze, which all-time
+        points leave out, by (user id, problem instance id). All of them
+        count, also ones not judged yet or not compiled, so that the count
+        tells nothing about their results.
+        """
+        submissions = Submission.objects.filter(problem_instance__in=pis, user__in=users, kind="NORMAL", date__gt=frozen_at)
+        if counting_end is not None:
+            submissions = submissions.filter(date__lte=counting_end)
+        return Counter(submissions.values_list("user_id", "problem_instance_id"))
+
     def serialize_ranking(self, key):
         now = timezone.now()
         config = get_camp_config(self.contest)
@@ -328,6 +351,8 @@ class CzecieCampRankingController(DefaultRankingController):
             submissions = [s for s in submissions if (s.user_id, s.problem_instance_id) not in disqualified_problems]
 
         best_daily, best_stale = best_submissions(submissions, pi_by_id, counting_end, stale_end, last_daily, lambda submission: submission.score)
+        # Participants see where someone submitted after the freeze, but not the points.
+        after_freeze = self._count_after_freeze(pis, users, frozen_at, counting_end) if frozen_at is not None and stale_weight else {}
 
         rows = []
         for user in users:
@@ -345,6 +370,9 @@ class CzecieCampRankingController(DefaultRankingController):
                     "url": self._submission_url(stale if stale_weight else daily),
                     "disqualified": (user.id, pi.id) in disqualified_problems,
                 }
+                cell["after_freeze"] = 0 if cell["disqualified"] else after_freeze.get((user.id, pi.id), 0)
+                if cell["after_freeze"]:
+                    cell["after_freeze_text"] = after_freeze_text(cell["after_freeze"])
                 if combined:
                     if daily or stale:
                         cell["weighted_daily"] = daily_weight * (cell["daily"] or 0)
