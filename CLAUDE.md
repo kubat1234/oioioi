@@ -4,6 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OIOIOI is the Django web interface of SIO2, a platform for algorithmic contests (szkopul.edu.pl, Polish Olympiad in Informatics). Python 3.13, Django 5.2, PostgreSQL, Celery/RabbitMQ, Filetracker for file storage, sioworkers for judging.
 
+## Git workflow (fork kubat1234/oioioi)
+
+- The main branch is `main` (renamed from `czecie-camp`). The remote of the fork may be called `fork` or `origin` in a clone — check `git remote -v`.
+- `main` is protected: never commit or push to it directly. Every change goes on a branch (`camp-…`, `fix-…`), then a PR to `main`, merged with "Squash and merge".
+- CI (`.github/workflows/czecie-ci.yml`) runs ruff, a missing-migrations check and the test suite on every PR; after a merge to `main` it builds the Docker image `ghcr.io/kubat1234/oioioi` (tags `main`, `sha-<short>`). Run ruff and the relevant tests locally before opening a PR.
+- `sio2project/oioioi` `master` is upstream (`origin/master` in the maintainer's clone). Do NOT merge upstream into `main` without the maintainer's explicit OK. PRs meant for upstream branch from upstream `master`, not from `main`.
+
 ## Development environment (Docker)
 
 Everything runs in containers defined in `docker-compose-dev.yml` (`web`, `worker`, `db`, `broker`, `rustfs`, `s3dedup`). The repo is mounted at `/sio2/oioioi` in `web`; the Django deployment dir (`manage.py`, `settings.py`) is `/sio2/deployment`. Use `easy_toolbox.py` (run `./easy_toolbox.py -h`):
