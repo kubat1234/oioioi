@@ -173,6 +173,7 @@ def problems_list_view(request):
     # Preload user-related data to avoid N+1 queries
     results_map = {}
     last_submission_map = {}
+    show_status = controller.show_last_submission_status(request)
     if request.user.is_authenticated:
         # Bulk fetch UserResultForProblem objects. We only keep those for which
         # the user can see the submission score.
@@ -201,28 +202,30 @@ def problems_list_view(request):
             # Some controllers may hide score even if UserResultForProblem exists
             if r and r.submission_report and controller.can_see_submission_score(request, r.submission_report.submission):
                 results_map[r.problem_instance_id] = r
+                r.extra_badge_class = controller.problems_list_result_badge_class(request, r)
 
-        # For each problem instance, fetch only the single latest NORMAL
-        # submission by this user using a correlated subquery
-        latest_sub_id_sq = (
-            Submission.objects.filter(
-                user=request.user,
-                problem_instance=OuterRef("problem_instance"),
-                kind="NORMAL",
+        if show_status:
+            # For each problem instance, fetch only the single latest NORMAL
+            # submission by this user using a correlated subquery
+            latest_sub_id_sq = (
+                Submission.objects.filter(
+                    user=request.user,
+                    problem_instance=OuterRef("problem_instance"),
+                    kind="NORMAL",
+                )
+                .order_by("-date")
+                .values("id")[:1]
             )
-            .order_by("-date")
-            .values("id")[:1]
-        )
 
-        last_submission_map = {
-            s.problem_instance_id: s
-            for s in Submission.objects.filter(
-                user=request.user,
-                problem_instance__in=problem_instances,
-                kind="NORMAL",
-                id=Subquery(latest_sub_id_sq),
-            )
-        }
+            last_submission_map = {
+                s.problem_instance_id: s
+                for s in Submission.objects.filter(
+                    user=request.user,
+                    problem_instance__in=problem_instances,
+                    kind="NORMAL",
+                    id=Subquery(latest_sub_id_sq),
+                )
+            }
 
     def get_submission_template_context(pi):
         submission = last_submission_map.get(pi.id, None)
@@ -258,7 +261,6 @@ def problems_list_view(request):
     show_submissions_limit = any(p[6] for p in problems_statements)
     show_submit_button = any(p[7] for p in problems_statements)
     show_rounds = len(frozenset(pi.round_id for pi in problem_instances)) > 1
-    show_status = request.user.is_authenticated  # Always show status for authenticated users
     table_columns = 3 + int(show_problems_limits) + int(show_submissions_limit) + int(show_submit_button)
     show_editorials = any(p[9] for p in problems_statements)
 

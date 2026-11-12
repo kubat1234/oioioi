@@ -192,11 +192,11 @@
                                     <a href="{{ link }}">
                                     {% endif %}
                                         {% if result.submission_report.score_report.score == result.submission_report.score_report.max_score %}
-                                            <div class="badge text-bg-success"> {{ result.score }}</div>
+                                            <div class="badge text-bg-success {{ result.extra_badge_class }}"> {{ result.score }}</div>
                                         {% elif result.submission_report.score_report.score > 0 %}
-                                            <div class="badge text-bg-warning"> {{ result.score }}</div>
+                                            <div class="badge text-bg-warning {{ result.extra_badge_class }}"> {{ result.score }}</div>
                                         {% else %}
-                                            <div class="badge text-bg-danger"> {{ result.score }}</div>
+                                            <div class="badge text-bg-danger {{ result.extra_badge_class }}"> {{ result.score }}</div>
                                         {% endif %}
                                     {% if not is_admin %}
                                     </a>

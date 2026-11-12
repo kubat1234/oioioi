@@ -10,6 +10,7 @@ from django.urls import reverse
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
+from oioioi.contests.controllers import get_score_badge_class
 from oioioi.contests.models import ProblemInstance, Submission
 from oioioi.contests.utils import has_any_active_round, is_contest_basicadmin, is_contest_observer
 from oioioi.czeciecamp.models import (
@@ -146,6 +147,30 @@ class CzecieCampContestController(ProgrammingContestController):
 
     def separate_public_results(self):
         return True
+
+    def show_last_submission_status(self, request):
+        # The problems list of a camp shows only the score.
+        return False
+
+    def problems_list_result_badge_class(self, request, result):
+        """A gold frame around full points if some submission got full points
+        while the round of the problem was running (as for Dzienne).
+        """
+        if result.score is None or result.submission_report is None:
+            return ""
+        shown = result.submission_report.submission
+        if get_score_badge_class(result.score, shown.max_score) != "text-bg-success":
+            return ""
+        round = result.problem_instance.round
+        if round is None:
+            return ""
+        submissions = Submission.objects.filter(
+            user=result.user, problem_instance=result.problem_instance, kind="NORMAL", score__isnull=False, date__gte=round.start_date
+        )
+        for submission in submissions:
+            if is_daily_submission(round, submission.date) and get_score_badge_class(submission.score, submission.max_score) == "text-bg-success":
+                return "camp-full-in-round"
+        return ""
 
     def results_visible(self, request, submission):
         if get_camp_config(self.contest).results_visible_during_round:
