@@ -9,6 +9,7 @@ OIOIOI is the Django web interface of SIO2, a platform for algorithmic contests 
 - The main branch is `main` (renamed from `czecie-camp`). The remote of the fork may be called `fork` or `origin` in a clone — check `git remote -v`.
 - `main` is protected: never commit or push to it directly. Every change goes on a branch (`camp-…`, `fix-…`), then a PR to `main`, merged with "Squash and merge".
 - CI (`.github/workflows/czecie-ci.yml`) runs ruff, a missing-migrations check and the test suite on every PR; after a merge to `main` it builds the Docker image `ghcr.io/kubat1234/oioioi` (tags `main`, `sha-<short>`). Run ruff and the relevant tests locally before opening a PR.
+- Production (`docker-compose.yml`) runs the released image `ghcr.io/kubat1234/oioioi:${SIO_TAG}`; it is updated only with `./deploy.sh <version>` (refuses during a running round, backs up the DB, runs migrations in the one-shot `migrate` service before `web` starts). Do not build images on the server.
 - Releases: Actions → Release → Run workflow (`.github/workflows/release.yml`) tags the already built image of the current `main` commit as `vYYYY.MM.DD[.N]` and `latest` and creates a GitHub Release with generated notes. Never create `v*` tags by hand.
 - `sio2project/oioioi` `master` is upstream (`origin/master` in the maintainer's clone). Do NOT merge upstream into `main` without the maintainer's explicit OK. PRs meant for upstream branch from upstream `master`, not from `main`.
 

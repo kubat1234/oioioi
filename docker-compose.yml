@@ -1,7 +1,13 @@
 # Production setup of the Czecie camp SIO2 server.
-# Server-specific values (data directory, port, passwords) come from .env,
-# see .env.example. For local development use docker-compose-dev.yml.
+# Server-specific values (data directory, port, passwords, version) come from
+# .env, see .env.example. For local development use docker-compose-dev.yml.
+#
+# The image is built by CI and released with the Release workflow; update the
+# server with ./deploy.sh (backup, pull, migrations, restart, check), not by
+# building here. SIO_TAG selects the release (e.g. v2026.11.12).
 name: sio
+
+x-image: &image '${SIO_IMAGE:-ghcr.io/kubat1234/oioioi}:${SIO_TAG:-latest}'
 
 x-common-envs: &common-envs
   FILETRACKER_URL: 'http://web:9999'
@@ -32,9 +38,21 @@ services:
       RABBITMQ_DEFAULT_PASS: oioioi
     stop_grace_period: 1m
 
+  # Applies database migrations of the image and exits; web starts only after
+  # it succeeds, so a failed migration leaves the site down instead of running
+  # new code on an old schema. ./deploy.sh makes a backup before.
+  migrate:
+    image: *image
+    restart: "no"
+    command: ["bash", "-c", "/sio2/oioioi/wait-for-it.sh -t 60 db:5432 && ./manage.py migrate --noinput"]
+    environment:
+      <<: *common-envs
+    volumes:
+      - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/settings.py:/sio2/deployment/settings.py
+    depends_on: [db]
+
   web:
-    build: .
-    image: sio-oioioi:latest
+    image: *image
     restart: unless-stopped
     command: ["/sio2/oioioi/oioioi_init.sh"]
     environment:
@@ -54,11 +72,23 @@ services:
     volumes:
       - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/filetracker:/sio2/deployment/media
       - ${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/settings.py:/sio2/deployment/settings.py
-    depends_on: [db, broker]
+    depends_on:
+      db:
+        condition: service_started
+      broker:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/oioioi_init_done"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5m
     stop_grace_period: 3m
 
   worker:
-    image: sio-oioioi:latest
+    image: *image
     restart: unless-stopped
     command: ["/sio2/oioioi/worker_init.sh"]
     environment:
