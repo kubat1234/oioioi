@@ -878,7 +878,7 @@ class TestCreateCamp(TestCase):
         self.assertEqual([(r.name, r.daily_weight, r.stale_weight) for r in rankings[:3]], expected)
         self.assertEqual([r.name for r in rankings[3:]], ["Day 0", "Day 1", "Day 2", "Day 3"])
         self.assertTrue(config.results_visible_during_round)
-        self.assertEqual(contest.default_submissions_limit, 25)
+        self.assertEqual(contest.default_submissions_limit, 50)
         self.assertFalse(contest.show_contest_rules)
         rounds = list(contest.round_set.order_by("start_date"))
         self.assertEqual([r.name for r in rounds], ["Day 0", "Day 1", "Day 2", "Day 3"])

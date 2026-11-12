@@ -38,7 +38,7 @@ from oioioi.rankings.models import Ranking
 NEW_ROUND_PREFIX = "new"
 ROUNDS_FORM_ID = "rounds-form"
 DEFAULT_START_HOUR = 20
-CAMP_SUBMISSIONS_LIMIT = 25
+CAMP_SUBMISSIONS_LIMIT = 50
 
 
 @make_request_condition
