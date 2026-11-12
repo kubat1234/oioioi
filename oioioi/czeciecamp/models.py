@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.base.utils.deps import check_django_app_dependencies
-from oioioi.contests.models import Contest, Round
+from oioioi.contests.models import Contest, ProblemInstance, Round
 
 check_django_app_dependencies(__name__, ["oioioi.participants"])
 
@@ -53,6 +53,15 @@ class CzecieCampConfig(models.Model):
     hidden_users = models.JSONField(default=list, blank=True, verbose_name=_("participants hidden in rankings"))
     # Problem instance id -> {"at": when the rejudge was started, "count": submissions to compare}.
     last_rejudges = models.JSONField(default=dict, blank=True, verbose_name=_("last rejudges of problems"))
+    # 0 for camps created before round limits existed, so they keep working
+    # as before; the camp wizard sets its own default.
+    default_round_submissions_limit = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("default submissions limit during a round"),
+        help_text=_(
+            "How many submissions to a problem a participant may send while its round is running, for problems without their own limit. 0 means no limit."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Czecie camp config")
@@ -246,6 +255,35 @@ if "oioioi.disqualification" in settings.INSTALLED_APPS:
 def get_camp_config(contest):
     config, _created = CzecieCampConfig.objects.get_or_create(contest=contest)
     return config
+
+
+class CampProblemSettings(models.Model):
+    """Settings of one problem of a camp."""
+
+    problem_instance = models.OneToOneField(ProblemInstance, primary_key=True, on_delete=models.CASCADE, related_name="camp_settings")
+    round_submissions_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("submissions limit during the round"),
+        help_text=_("How many submissions a participant may send while the round is running. Empty means the camp default, 0 means no limit."),
+    )
+
+    class Meta:
+        verbose_name = _("camp settings")
+        verbose_name_plural = _("camp settings")
+
+    def __str__(self):
+        return str(self.problem_instance)
+
+
+def get_round_submissions_limit(problem_instance):
+    """The limit of submissions sent while the round of the problem is
+    running: its own one, or the default of the camp. 0 means no limit.
+    """
+    own = CampProblemSettings.objects.filter(problem_instance=problem_instance).values_list("round_submissions_limit", flat=True).first()
+    if own is not None:
+        return own
+    return get_camp_config(problem_instance.contest).default_round_submissions_limit
 
 
 def ordered_rounds(contest, rounds=None):

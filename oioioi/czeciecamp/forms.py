@@ -10,6 +10,9 @@ from oioioi.contests.models import Contest, Round
 from oioioi.czeciecamp.models import CampRanking, CzecieCampConfig, check_weights, ordered_rounds
 
 DATETIME_FORMAT = "%Y-%m-%dT%H:%M"
+# Defaults of the camp wizard: a limit during rounds, none for the whole camp.
+CAMP_ROUND_SUBMISSIONS_LIMIT = 50
+CAMP_SUBMISSIONS_LIMIT = 0
 
 
 class DateTimeLocalField(forms.DateTimeField):
@@ -40,9 +43,27 @@ class CampSettingsForm(BootstrapFormMixin, forms.ModelForm):
         help_text=CzecieCampConfig._meta.get_field("counting_end_date").help_text,
     )
 
+    # Stored in the contest, where SIO keeps it.
+    default_submissions_limit = forms.IntegerField(
+        min_value=0,
+        label=capfirst(_("default submissions limit for the whole camp")),
+        help_text=_("Given to problems added to the camp from now on; a problem's own limit is set on its admin page. 0 means no limit."),
+    )
+
     class Meta:
         model = CzecieCampConfig
-        fields = ["counting_end_date", "results_visible_during_round"]
+        fields = ["counting_end_date", "results_visible_during_round", "default_round_submissions_limit", "default_submissions_limit"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["default_submissions_limit"].initial = self.instance.contest.default_submissions_limit
+
+    def save(self, commit=True):
+        config = super().save(commit)
+        contest = config.contest
+        contest.default_submissions_limit = self.cleaned_data["default_submissions_limit"]
+        contest.save(update_fields=["default_submissions_limit"])
+        return config
 
 
 class RoundForm(BootstrapFormMixin, forms.ModelForm):
@@ -224,6 +245,18 @@ class CreateCampForm(BootstrapFormMixin, forms.Form):
         min_value=0,
         initial=1,
         label=capfirst(_("all-time ranking weight")),
+    )
+    round_submissions_limit = forms.IntegerField(
+        min_value=0,
+        initial=CAMP_ROUND_SUBMISSIONS_LIMIT,
+        label=capfirst(CzecieCampConfig._meta.get_field("default_round_submissions_limit").verbose_name),
+        help_text=_("Submissions to a problem a participant may send while its round is running. 0 means no limit."),
+    )
+    submissions_limit = forms.IntegerField(
+        min_value=0,
+        initial=CAMP_SUBMISSIONS_LIMIT,
+        label=capfirst(_("default submissions limit for the whole camp")),
+        help_text=_("Submissions to a problem a participant may send in the whole camp, during and after its round. 0 means no limit."),
     )
 
     def clean(self):

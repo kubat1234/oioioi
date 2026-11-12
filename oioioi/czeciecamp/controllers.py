@@ -21,6 +21,7 @@ from oioioi.czeciecamp.models import (
     CzecieCampConfig,
     create_default_rankings,
     get_camp_config,
+    get_round_submissions_limit,
     medal_places,
     ordered_rankings,
 )
@@ -211,23 +212,60 @@ class CzecieCampContestController(ProgrammingContestController):
 
     # The default implementation lets the problem controller count all
     # submissions; a camp does not count compilation errors, so it counts here.
-    def get_submissions_count(self, request, problem_instance, kind=None):
-        """Submissions that use up the limit: all but compilation errors."""
+    def _counted_submissions(self, request, problem_instance, kind):
+        """Submissions that use up the limits: all but compilation errors."""
         if request.user.is_anonymous:
-            return 0
+            return Submission.objects.none()
+        return Submission.objects.filter(user=request.user, problem_instance=problem_instance, kind=kind).exclude(status="CE")
+
+    def get_submissions_count(self, request, problem_instance, kind=None):
         if kind is None:
             kind = self.get_default_submission_kind(request)
-        return Submission.objects.filter(user=request.user, problem_instance=problem_instance, kind=kind).exclude(status="CE").count()
+        return self._counted_submissions(request, problem_instance, kind).count()
+
+    def _binding_limit(self, request, problem_instance, kind, noadmin=False):
+        """Of the limits that apply now, the one that leaves the fewest
+        submissions, as (limit, submissions left), or None if none applies.
+
+        The limit for the whole camp is the usual one of the problem. While
+        the round of the problem is running (as for Dzienne), submissions sent
+        during the round are also limited by the round limit.
+        """
+        total = super().get_submissions_limit(request, problem_instance, kind, noadmin)
+        if total is None:
+            # Admins, ignored submissions: no limit at all.
+            return None
+        submissions = self._counted_submissions(request, problem_instance, kind)
+        limits = []
+        if total:
+            limits.append((total, submissions.count()))
+        round = problem_instance.round
+        if kind == "NORMAL" and round is not None and is_daily_submission(round, request.timestamp):
+            round_limit = get_round_submissions_limit(problem_instance)
+            if round_limit:
+                during_round = submissions.filter(date__gte=round.start_date)
+                if round.end_date is not None:
+                    during_round = during_round.filter(date__lte=round.end_date)
+                limits.append((round_limit, during_round.count()))
+        if not limits:
+            return None
+        limit, used = min(limits, key=lambda limit_used: limit_used[0] - limit_used[1])
+        return limit, max(0, limit - used)
+
+    def get_submissions_limit(self, request, problem_instance, kind="NORMAL", noadmin=False):
+        """The limit shown next to the submissions left ("X of Y")."""
+        binding = self._binding_limit(request, problem_instance, kind, noadmin)
+        if binding is None:
+            return super().get_submissions_limit(request, problem_instance, kind, noadmin)
+        return binding[0]
 
     def get_submissions_left(self, request, problem_instance, kind=None):
         if request.user.is_anonymous:
             return None
         if kind is None:
             kind = self.get_default_submission_kind(request)
-        limit = self.get_submissions_limit(request, problem_instance, kind)
-        if not limit:
-            return None
-        return max(0, limit - self.get_submissions_count(request, problem_instance, kind))
+        binding = self._binding_limit(request, problem_instance, kind)
+        return None if binding is None else binding[1]
 
     def is_submissions_limit_exceeded(self, request, problem_instance, kind=None):
         submissions_left = self.get_submissions_left(request, problem_instance, kind)

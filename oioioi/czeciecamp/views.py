@@ -38,7 +38,6 @@ from oioioi.rankings.models import Ranking
 NEW_ROUND_PREFIX = "new"
 ROUNDS_FORM_ID = "rounds-form"
 DEFAULT_START_HOUR = 20
-CAMP_SUBMISSIONS_LIMIT = 50
 
 
 @make_request_condition
@@ -447,13 +446,16 @@ def create_camp_view(request):
                 id=data["contest_id"],
                 name=data["name"],
                 controller_name=CONTROLLER_NAME,
-                default_submissions_limit=CAMP_SUBMISSIONS_LIMIT,
+                default_submissions_limit=data["submissions_limit"],
                 # The generic rules page does not describe camp rankings correctly.
                 show_contest_rules=False,
             )
             CzecieCampConfig.objects.update_or_create(
                 contest=contest,
-                defaults={"results_visible_during_round": data["results_visible_during_round"]},
+                defaults={
+                    "results_visible_during_round": data["results_visible_during_round"],
+                    "default_round_submissions_limit": data["round_submissions_limit"],
+                },
             )
             # Saving the contest created the default rankings, with weights 1.
             contest.camp_rankings.all().delete()
