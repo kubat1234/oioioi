@@ -2,6 +2,7 @@ import importlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
+import pytest
 from django.contrib.auth.models import AnonymousUser, User
 from django.test import RequestFactory, override_settings
 from django.urls import reverse
@@ -15,7 +16,9 @@ from oioioi.contests.models import (
     ScoreReport,
     Submission,
     SubmissionReport,
+    UserResultForContest,
     UserResultForProblem,
+    UserResultForRound,
 )
 from oioioi.contests.scores import IntegerScore
 from oioioi.czeciecamp.controllers import after_freeze_text
@@ -929,6 +932,52 @@ class TestCampBestResult(CampTestCase):
             response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
         for _pi, _submissions, badge, score in cases:
             self.assertContains(response, f'<div class="badge {badge}"> {score}</div>', html=False)
+
+    def _migrate(self):
+        from django.apps import apps
+
+        migration = importlib.import_module("oioioi.czeciecamp.migrations.0016_best_problem_results")
+        migration.results_from_best_submissions(apps, None)
+
+    @pytest.mark.skip(reason="Tests the one-off data migration 0016; remove the skip to run it.")
+    def test_migration(self):
+        # Results counted the old way, from the latest submission.
+        self._send(_date(1, hour=1), 100)
+        self._send(_date(1, hour=7), 30)
+        self._send(_date(2, hour=1), 50, pi=self.pi2)
+        UserResultForProblem.objects.create(user=self.user1, problem_instance=self.pi1, score=IntegerScore(30), status="INI_OK")
+        UserResultForProblem.objects.create(user=self.user1, problem_instance=self.pi2, score=IntegerScore(50), status="INI_OK")
+        # No scored submission any more (e.g. all of them ignored).
+        empty = UserResultForProblem.objects.create(user=self.user1, problem_instance=self.pi_trial, score=IntegerScore(10), status="INI_OK")
+        round_result = UserResultForRound.objects.create(user=self.user1, round=self.round1, score=IntegerScore(30))
+        UserResultForRound.objects.create(user=self.user1, round=self.round2, score=IntegerScore(50))
+        contest_result = UserResultForContest.objects.create(user=self.user1, contest=self.contest, score=IntegerScore(80))
+        # Another kind of contest keeps its results.
+        other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        other_round = Round.objects.create(contest=other, name="R", start_date=_date(0))
+        other_pi = ProblemInstance.objects.create(problem=self.pi1.problem, contest=other, round=other_round, short_name="abc")
+        self._send(_date(1, hour=1), 100, pi=other_pi)
+        self._send(_date(1, hour=2), 30, pi=other_pi)
+        other_results = [
+            UserResultForProblem.objects.create(user=self.user1, problem_instance=other_pi, score=IntegerScore(30), status="INI_OK"),
+            UserResultForRound.objects.create(user=self.user1, round=other_round, score=IntegerScore(30)),
+            UserResultForContest.objects.create(user=self.user1, contest=other, score=IntegerScore(30)),
+        ]
+
+        self._migrate()
+
+        result = UserResultForProblem.objects.get(user=self.user1, problem_instance=self.pi1)
+        self.assertEqual(result.score, IntegerScore(100))
+        self.assertEqual(result.submission_report.submission.date, _date(1, hour=1))
+        empty.refresh_from_db()
+        self.assertEqual((empty.score, empty.status, empty.submission_report), (None, None, None))
+        round_result.refresh_from_db()
+        self.assertEqual(round_result.score, IntegerScore(100))
+        contest_result.refresh_from_db()
+        self.assertEqual(contest_result.score, IntegerScore(150))
+        for unchanged in other_results:
+            unchanged.refresh_from_db()
+            self.assertEqual(unchanged.score, IntegerScore(30))
 
 
 class TestCampPanel(CampTestCase):
