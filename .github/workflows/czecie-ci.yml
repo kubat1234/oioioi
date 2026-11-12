@@ -1,0 +1,96 @@
+# CI of the Czecie fork: lint, missing migrations and tests on every PR to
+# main; after a merge to main, also builds the Docker image and pushes it to
+# ghcr.io/<owner>/oioioi with tags "main" and "sha-<short sha>".
+# The upstream pytest.yml / ruff.yml / build.yml are disabled in this fork's
+# Actions settings, so they do not run twice.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A new push to a PR cancels its older run; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: --version
+          version: 0.15.1
+      - run: ruff check
+      - run: ruff format --check --diff
+
+  migrations:
+    name: migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-env
+      - name: Check for missing migrations
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci"
+          printf 'from oioioi.test_settings import *\nDATABASES["default"]["NAME"] = ":memory:"\n' > "$RUNNER_TEMP/ci/ci_settings.py"
+          PYTHONPATH="$RUNNER_TEMP/ci" DJANGO_SETTINGS_MODULE=ci_settings uv run --no-sync python -m django makemigrations --check --dry-run
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-env
+        with:
+          install-texlive: "true"
+      - name: Run tests
+        run: ./test.sh -n auto --migrations
+
+  image:
+    name: image
+    needs: [lint, migrations, tests]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/oioioi
+          tags: |
+            type=raw,value=main
+            type=sha,prefix=sha-
+
+      - uses: docker/setup-buildx-action@v3
+
+      # No target: the last stage of the Dockerfile, the same one the
+      # production docker-compose.yml builds with "build: .".
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
