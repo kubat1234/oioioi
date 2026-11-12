@@ -124,6 +124,8 @@ class TestProblemsharing(TestCase):
         self.assertEqual(response.context["form"].initial["visibility"], Problem.VISIBILITY_PRIVATE)
 
 
+# The task archive link is hidden by default (TASK_ARCHIVE_LINK_VISIBLE).
+@override_settings(TASK_ARCHIVE_LINK_VISIBLE=True)
 class TestNavigationBarItems(TestCase):
     fixtures = ["test_users"]
 
