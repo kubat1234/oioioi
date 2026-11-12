@@ -77,6 +77,33 @@ def get_badge_class(display_type):
     return STATUS_CLASSES.get(display_type, "text-bg-secondary")
 
 
+def get_score_badge_class(score, max_score):
+    """Color of a score badge, as in the Score column of the problems list:
+    green for full points, yellow for some, red for none. ``None`` if the
+    score cannot be compared.
+    """
+    try:
+        points, max_points = score.to_int(), max_score.to_int()
+    except (AttributeError, TypeError):
+        return None
+    if points >= max_points:
+        return "text-bg-success"
+    if points > 0:
+        return "text-bg-warning"
+    return "text-bg-danger"
+
+
+def get_submission_badge_class(submission, can_see_score):
+    """Once the score of a submission is known, its status badge has the
+    color of the score; until then the color of the status.
+    """
+    if can_see_score and submission.score is not None and submission.max_score is not None:
+        badge_class = get_score_badge_class(submission.score, submission.max_score)
+        if badge_class is not None:
+            return badge_class
+    return get_badge_class(submission.status)
+
+
 def submission_template_context(request, submission):
     pi = submission.problem_instance
     controller = pi.controller
@@ -94,7 +121,7 @@ def submission_template_context(request, submission):
     message = submission.get_status_display
 
     display_type = submission.get_display_type(can_see_score)
-    badge_class = get_badge_class(display_type)
+    badge_class = get_submission_badge_class(submission, can_see_score)
 
     return {
         "submission": submission,
