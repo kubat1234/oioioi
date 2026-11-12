@@ -61,9 +61,12 @@ ENV BERKELEYDB_DIR=/usr
 
 WORKDIR /sio2/oioioi
 
-COPY --chown=oioioi:oioioi . ./
 ENV UV_PROJECT_ENVIRONMENT=/sio2/.venv
-RUN uv sync --all-groups
+
+# Dependencies first, from the lockfiles only, so that a change in the code
+# alone reuses these layers from the cache instead of reinstalling everything.
+COPY --chown=oioioi:oioioi pyproject.toml uv.lock ./
+RUN uv sync --all-groups --no-install-project
 
 # needed for oioioi-create-config
 ENV VIRTUAL_ENV=/sio2/.venv
@@ -73,7 +76,13 @@ ENV PATH=$VIRTUAL_ENV/bin:$PATH
 # Installing node dependencies
 ENV PATH=$PATH:/sio2/oioioi/node_modules/.bin
 
+COPY --chown=oioioi:oioioi package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --chown=oioioi:oioioi oioioi_cypress/package.json ./oioioi_cypress/
 RUN pnpm install --frozen-lockfile
+
+# The code; installing the project itself into the venv is quick.
+COPY --chown=oioioi:oioioi . ./
+RUN uv sync --all-groups
 RUN pnpm run build
 
 RUN if [ "$(uname -m)" = "aarch64" ]; then \

@@ -19,6 +19,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       packages: write
     env:
@@ -37,6 +38,19 @@ jobs:
             echo "::error::This commit is already released as $existing."
             exit 1
           fi
+
+      # The image is built in parallel with the tests, so it may exist even if
+      # the tests failed: release only after the whole CI run passed.
+      - name: Check that CI passed for this commit
+        run: |
+          result=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$GITHUB_SHA&event=push&branch=main" \
+            --jq '[.workflow_runs[] | select(.name == "CI")] | sort_by(.created_at) | last | "\(.status) \(.conclusion)"')
+          echo "CI for ${GITHUB_SHA::7}: $result"
+          case "$result" in
+            "completed success") ;;
+            "completed "*) echo "::error::CI failed for this commit ($result). Fix main first."; exit 1 ;;
+            *) echo "::error::CI for this commit has not finished yet ($result). Wait until it is green, then run Release again."; exit 1 ;;
+          esac
 
       - uses: docker/login-action@v3
         with:
