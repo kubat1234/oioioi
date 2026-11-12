@@ -8,7 +8,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from oioioi.base.tests import TestCase, fake_time
-from oioioi.contests.models import Contest, ProblemInstance, Round, ScoreReport, Submission, SubmissionReport, UserResultForProblem
+from oioioi.contests.models import (
+    Contest,
+    ProblemInstance,
+    Round,
+    ScoreReport,
+    Submission,
+    SubmissionReport,
+    UserResultForProblem,
+)
 from oioioi.contests.scores import IntegerScore
 from oioioi.czeciecamp.controllers import after_freeze_text
 from oioioi.czeciecamp.forms import make_contest_id
@@ -823,10 +831,12 @@ class TestCampGoldFrame(CampTestCase):
         self._send(self.DURING, 50)
         self._send(self.AFTER, 80)
         self.assertEqual(self._frame(), "")
-        # Full points during the round, but the score shown is a later one.
-        self._send(self.DURING, 100, pi=self.pi2)
-        self._send(_date(2, hour=7), 80, pi=self.pi2)
-        self.assertEqual(self._frame(self.pi2), "")
+
+    def test_full_points_during_the_round_then_less(self):
+        # The best submission is shown, so a worse later one does not matter.
+        self._send(self.DURING, 100)
+        self._send(self.AFTER, 80)
+        self.assertEqual(self._frame(), "camp-full-in-round")
 
     def test_trial_round_and_problem_without_round(self):
         # A trial round counts as ended right after it starts.
@@ -849,6 +859,76 @@ class TestCampGoldFrame(CampTestCase):
             response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
         self.assertContains(response, '<div class="badge text-bg-success camp-full-in-round">', html=False)
         self.assertContains(response, '<div class="badge text-bg-warning ">', html=False)
+
+
+class TestCampBestResult(CampTestCase):
+    """The result of a camp problem (the Score badge on the problems list) is
+    its best scored submission, the earliest of equally good ones.
+    """
+
+    def _send(self, date, score, status="INI_OK", kind="NORMAL", pi=None, user=None):
+        submission = Submission.objects.create(
+            user=user or self.user1,
+            problem_instance=pi or self.pi1,
+            date=date,
+            kind=kind,
+            status=status,
+            score=IntegerScore(score) if score is not None else None,
+            max_score=IntegerScore(100) if score is not None else None,
+        )
+        if score is not None:
+            report = SubmissionReport.objects.create(submission=submission, status="ACTIVE", kind="NORMAL")
+            ScoreReport.objects.create(submission_report=report, status="OK", score=IntegerScore(score), max_score=IntegerScore(100))
+        return submission
+
+    def _result(self, pi=None, user=None):
+        pi = pi or self.pi1
+        pi.problem.controller.update_user_results(user or self.user1, pi)
+        return UserResultForProblem.objects.get(user=user or self.user1, problem_instance=pi)
+
+    def test_best_not_last(self):
+        self._send(_date(1, hour=1), 60)
+        best = self._send(_date(1, hour=2), 100)
+        self._send(_date(1, hour=7), 80)
+        result = self._result()
+        self.assertEqual(result.score, IntegerScore(100))
+        self.assertEqual(result.submission_report.submission, best)
+
+    def test_earliest_of_equally_good(self):
+        first = self._send(_date(1, hour=1), 70)
+        self._send(_date(1, hour=2), 70)
+        self.assertEqual(self._result().submission_report.submission, first)
+
+    def test_unscored_ignored_and_other_users_do_not_count(self):
+        self._send(_date(1, hour=1), 40)
+        self._send(_date(1, hour=2), None, status="CE")
+        self._send(_date(1, hour=3), None, status="?")
+        self._send(_date(1, hour=4), 100, kind="IGNORED")
+        self._send(_date(1, hour=4), 100, user=self.user2)
+        result = self._result()
+        self.assertEqual((result.score, result.status), (IntegerScore(40), "INI_OK"))
+
+    def test_no_scored_submission(self):
+        self._send(_date(1, hour=1), None, status="CE")
+        result = self._result()
+        self.assertEqual((result.score, result.status, result.submission_report), (None, None, None))
+
+    def test_problems_list(self):
+        # The Score badge with its color, and the glow for full points during the round.
+        cases = [
+            (self.pi1, [(_date(1, hour=1), 100), (_date(1, hour=7), 80)], "text-bg-success camp-full-in-round", "100"),
+            (self.pi2, [(_date(2, hour=1), 60), (_date(2, hour=7), 100), (_date(2, hour=8), 30)], "text-bg-success ", "100"),
+            (self.pi_trial, [(_date(0, hour=1), 70), (_date(0, hour=2), 20)], "text-bg-warning ", "70"),
+        ]
+        for pi, submissions, _badge, _score in cases:
+            for date, score in submissions:
+                self._send(date, score, pi=pi)
+            pi.problem.controller.update_user_results(self.user1, pi)
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(3)):
+            response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
+        for _pi, _submissions, badge, score in cases:
+            self.assertContains(response, f'<div class="badge {badge}"> {score}</div>', html=False)
 
 
 class TestCampPanel(CampTestCase):

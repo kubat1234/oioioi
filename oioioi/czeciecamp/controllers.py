@@ -11,7 +11,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.contests.controllers import get_score_badge_class
-from oioioi.contests.models import ProblemInstance, Submission
+from oioioi.contests.models import ProblemInstance, Submission, SubmissionReport
 from oioioi.contests.utils import has_any_active_round, is_contest_basicadmin, is_contest_observer
 from oioioi.czeciecamp.models import (
     DAILY_NAME,
@@ -147,6 +147,24 @@ class CzecieCampContestController(ProgrammingContestController):
 
     def separate_public_results(self):
         return True
+
+    def update_user_result_for_problem(self, result):
+        """The result of a problem is its best scored submission, the earliest
+        of equally good ones (as in Stałe), not the latest one as by default.
+        """
+        best = None
+        submissions = Submission.objects.filter(problem_instance=result.problem_instance, user=result.user, kind="NORMAL", score__isnull=False)
+        for submission in submissions.order_by("date", "id"):
+            if best is None or submission.score > best.score:
+                best = submission
+        if best is None:
+            result.score = None
+            result.status = None
+            result.submission_report = None
+            return
+        result.score = best.score
+        result.status = best.status
+        result.submission_report = SubmissionReport.objects.filter(submission=best, status="ACTIVE", kind="NORMAL").first()
 
     def show_last_submission_status(self, request):
         # The problems list of a camp shows only the score.
