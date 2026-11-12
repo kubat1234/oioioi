@@ -16,9 +16,11 @@ from oioioi.czeciecamp.models import (
     MEDALS_IOI,
     MEDALS_NONE,
     SCORING_LAST,
+    CampProblemSettings,
     CampRanking,
     create_default_rankings,
     get_camp_config,
+    get_round_submissions_limit,
     ordered_rankings,
     ordered_rounds,
     ranking_label,
@@ -611,6 +613,149 @@ class TestCampSubmissionsLimit(CampTestCase):
         self.assertContains(response, "Submission limit for the problem")
 
 
+class TestCampRoundSubmissionsLimit(CampTestCase):
+    """Limits: 2 submissions while the round is running, 3 in the whole camp."""
+
+    def setUp(self):
+        super().setUp()
+        self.pi1.submissions_limit = 3
+        self.pi1.save()
+        config = get_camp_config(self.contest)
+        config.default_round_submissions_limit = 2
+        config.save()
+        self.controller = self.contest.controller
+
+    def _request(self, timestamp, user=None):
+        request = RequestFactory().get("/")
+        request.user = user or self.user1
+        request.contest = self.contest
+        request.timestamp = timestamp
+        return request
+
+    def _send(self, date, status="OK", pi=None):
+        return Submission.objects.create(user=self.user1, problem_instance=pi or self.pi1, date=date, kind="NORMAL", status=status)
+
+    def _limit(self, timestamp, pi=None, user=None, kind="NORMAL"):
+        """(submissions left, the limit shown with it)."""
+        request = self._request(timestamp, user)
+        pi = pi or self.pi1
+        return self.controller.get_submissions_left(request, pi, kind), self.controller.get_submissions_limit(request, pi, kind)
+
+    def test_round_limit_during_the_round(self):
+        during, after = _date(1, hour=2), _date(1, hour=7)
+        self.assertEqual(self._limit(during), (2, 2))
+        self._send(_date(1, hour=1))
+        self._send(_date(1, hour=1), status="CE")
+        self.assertEqual(self._limit(during), (1, 2))
+        self._send(_date(1, hour=1, minute=30))
+        self.assertEqual(self._limit(during), (0, 2))
+        self.assertTrue(self.controller.is_submissions_limit_exceeded(self._request(during), self.pi1))
+        # After the round only the limit for the whole camp is left.
+        self.assertEqual(self._limit(after), (1, 3))
+        self._send(_date(1, hour=7))
+        self.assertEqual(self._limit(after), (0, 3))
+
+    def test_tighter_limit_is_shown(self):
+        self.pi1.submissions_limit = 2
+        self.pi1.save()
+        config = get_camp_config(self.contest)
+        config.default_round_submissions_limit = 5
+        config.save()
+        self._send(_date(1, hour=1))
+        self.assertEqual(self._limit(_date(1, hour=2)), (1, 2))
+
+    def test_no_limit_for_the_whole_camp(self):
+        self.pi1.submissions_limit = 0
+        self.pi1.save()
+        self._send(_date(1, hour=1))
+        self.assertEqual(self._limit(_date(1, hour=2)), (1, 2))
+        self.assertEqual(self._limit(_date(1, hour=7)), (None, 0))
+
+    def test_own_limit_of_a_problem(self):
+        settings = CampProblemSettings.objects.create(problem_instance=self.pi1, round_submissions_limit=1)
+        self.assertEqual(get_round_submissions_limit(self.pi1), 1)
+        self.assertEqual(self._limit(_date(1, hour=2)), (1, 1))
+        settings.round_submissions_limit = 0
+        settings.save()
+        # 0: no round limit, only the one for the whole camp.
+        self.assertEqual(self._limit(_date(1, hour=2)), (3, 3))
+        settings.round_submissions_limit = None
+        settings.save()
+        self.assertEqual(get_round_submissions_limit(self.pi1), 2)
+        self.assertEqual(str(settings), str(self.pi1))
+
+    def test_rounds_without_round_limit(self):
+        # A trial round counts as ended right after it starts.
+        self.pi_trial.submissions_limit = 0
+        self.pi_trial.save()
+        self.assertEqual(self._limit(_date(0, hour=1), pi=self.pi_trial), (None, 0))
+        # A problem without a round has no round to limit.
+        self.pi1.round = None
+        self.pi1.save()
+        self.assertEqual(self._limit(_date(1, hour=2)), (3, 3))
+
+    def test_round_without_end(self):
+        self.round1.end_date = None
+        self.round1.save()
+        self.pi1.refresh_from_db()
+        self._send(_date(5))
+        self.assertEqual(self._limit(_date(6)), (1, 2))
+
+    def test_admins_ignored_and_anonymous(self):
+        admin = User.objects.get(username="test_admin")
+        self.assertEqual(self._limit(_date(1, hour=2), user=admin), (None, None))
+        self.assertEqual(self._limit(_date(1, hour=2), kind="IGNORED"), (None, None))
+        # Anonymous users see the limit, but have no submissions left to count.
+        self.assertEqual(self._limit(_date(1, hour=2), user=AnonymousUser()), (None, 2))
+
+    def test_problems_list(self):
+        self._send(_date(1, hour=1))
+        self.assertTrue(self.client.login(username="test_user"))
+        url = reverse("problems_list", kwargs={"contest_id": self.contest.id})
+        with fake_time(_date(1, hour=2)):
+            self.assertContains(self.client.get(url), "1 of 2")
+        with fake_time(_date(1, hour=7)):
+            self.assertContains(self.client.get(url), "2 of 3")
+
+    def test_admin_page_of_a_problem(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        url = reverse("oioioiadmin:contests_probleminstance_change", kwargs={"contest_id": self.contest.id, "object_id": self.pi1.id})
+        response = self.client.get(url)
+        self.assertContains(response, "Submissions limit during the round")
+        data = {
+            "round": self.round1.id,
+            "short_name": "abc",
+            "submissions_limit": 3,
+            "camp_settings-TOTAL_FORMS": 1,
+            "camp_settings-INITIAL_FORMS": 0,
+            "camp_settings-MIN_NUM_FORMS": 0,
+            "camp_settings-MAX_NUM_FORMS": 1,
+            "camp_settings-0-round_submissions_limit": 7,
+            "camp_settings-0-problem_instance": self.pi1.id,
+        }
+        for inline_formset in response.context["inline_admin_formsets"]:
+            formset = inline_formset.formset
+            if formset.prefix != "camp_settings":
+                data.update({f"{formset.prefix}-{key}": value for key, value in formset.management_form.initial.items()})
+                for form in formset.initial_forms:
+                    data.update({form.add_prefix(name): value for name, value in form.initial.items() if value is not None})
+        self.client.post(url, data)
+        self.assertEqual(get_round_submissions_limit(self.pi1), 7)
+
+    def test_admin_page_of_another_contest(self):
+        other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        pi = ProblemInstance.objects.create(problem=self.pi1.problem, contest=other, short_name="abc")
+        self.assertTrue(self.client.login(username="test_admin"))
+        response = self.client.get(reverse("oioioiadmin:contests_probleminstance_change", kwargs={"contest_id": other.id, "object_id": pi.id}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Submissions limit during the round")
+
+    def test_create_camp_form_defaults(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        form = self.client.get(reverse("czeciecamp_create")).context["form"]
+        self.assertEqual((form["round_submissions_limit"].value(), form["submissions_limit"].value()), (50, 0))
+
+
 class TestCampPanel(CampTestCase):
     def _url(self, name, **kwargs):
         return reverse(name, kwargs=dict(contest_id=self.contest.id, **kwargs))
@@ -829,11 +974,22 @@ class TestCampPanel(CampTestCase):
 
     def test_settings(self):
         self.assertTrue(self.client.login(username="test_admin"))
-        data = {"action": "settings", "counting_end_date": "2020-08-03T20:00", "results_visible_during_round": "on"}
+        response = self.client.get(self._url("czeciecamp_panel"))
+        self.assertEqual(response.context["settings_form"]["default_submissions_limit"].value(), 10)
+        self.assertContains(response, "Default submissions limit for the whole camp")
+        data = {
+            "action": "settings",
+            "counting_end_date": "2020-08-03T20:00",
+            "results_visible_during_round": "on",
+            "default_round_submissions_limit": 20,
+            "default_submissions_limit": 100,
+        }
         self.client.post(self._url("czeciecamp_panel"), data)
         config = get_camp_config(self.contest)
         self.assertEqual(config.counting_end_date, timezone.make_aware(datetime(2020, 8, 3, 20, 0)))
         self.assertTrue(config.results_visible_during_round)
+        self.assertEqual(config.default_round_submissions_limit, 20)
+        self.assertEqual(Contest.objects.get(id=self.contest.id).default_submissions_limit, 100)
 
     def test_add_round_validation(self):
         self.assertTrue(self.client.login(username="test_admin"))
@@ -958,6 +1114,8 @@ class TestCreateCamp(TestCase):
                 "results_visible_during_round": "on",
                 "daily_weight": 2,
                 "stale_weight": 3,
+                "round_submissions_limit": 50,
+                "submissions_limit": 0,
             },
         )
         contest = Contest.objects.get(id="oboz-lodz-2026")
@@ -969,7 +1127,8 @@ class TestCreateCamp(TestCase):
         self.assertEqual([(r.name, r.daily_weight, r.stale_weight) for r in rankings[:3]], expected)
         self.assertEqual([r.name for r in rankings[3:]], ["Day 0", "Day 1", "Day 2", "Day 3"])
         self.assertTrue(config.results_visible_during_round)
-        self.assertEqual(contest.default_submissions_limit, 50)
+        self.assertEqual(contest.default_submissions_limit, 0)
+        self.assertEqual(config.default_round_submissions_limit, 50)
         self.assertFalse(contest.show_contest_rules)
         rounds = list(contest.round_set.order_by("start_date"))
         self.assertEqual([r.name for r in rounds], ["Day 0", "Day 1", "Day 2", "Day 3"])
