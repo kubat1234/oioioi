@@ -10,9 +10,8 @@ from django.urls import reverse
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
-from oioioi.contests.controllers import PastRoundsHiddenContestControllerMixin
 from oioioi.contests.models import ProblemInstance, Submission
-from oioioi.contests.utils import is_contest_basicadmin, is_contest_observer
+from oioioi.contests.utils import has_any_active_round, is_contest_basicadmin, is_contest_observer
 from oioioi.czeciecamp.models import (
     DAILY_NAME,
     MEDALS_NONE,
@@ -181,6 +180,18 @@ class CzecieCampContestController(ProgrammingContestController):
         if not self.contest.camp_rankings.exists():
             create_default_rankings(self.contest)
 
+    def can_see_round(self, request_or_context, round, no_admin=False):
+        """While a round is active, participants see only the active rounds.
+        Otherwise every round that has started is visible. Visibility changes
+        exactly at the round start, there is no preparation time before it.
+        """
+        context = self.make_context(request_or_context)
+        if not no_admin and context.is_admin:
+            return True
+        if has_any_active_round(request_or_context):
+            return self.get_round_times(request_or_context, round).is_active(context.timestamp)
+        return super().can_see_round(request_or_context, round, no_admin)
+
     def can_submit(self, request, problem_instance, check_round_times=True):
         """Participants may submit to every round that has already started,
         also after it ends.
@@ -197,9 +208,6 @@ class CzecieCampContestController(ProgrammingContestController):
             return True
         rtimes = self.get_round_times(request, problem_instance.round)
         return not rtimes.is_future(request.timestamp)
-
-
-CzecieCampContestController.mix_in(PastRoundsHiddenContestControllerMixin)
 
 
 class CzecieCampRankingController(DefaultRankingController):

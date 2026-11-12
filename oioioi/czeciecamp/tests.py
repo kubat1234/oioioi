@@ -500,6 +500,25 @@ class TestCampSubmitting(CampTestCase):
     def test_outsider_cannot_submit(self):
         self.assertFalse(self._can_submit(self.outsider, self.pi1, _date(1, hour=1)))
 
+    def _visible_rounds(self, user, timestamp):
+        request = RequestFactory().get("/")
+        request.user = user
+        request.contest = self.contest
+        request.timestamp = timestamp
+        rounds = (self.trial, self.round1, self.round2)
+        return {r.name for r in rounds if self.contest.controller.can_see_round(request, r)}
+
+    def test_round_visibility(self):
+        everything_started = {self.trial.name, "Runda 1", "Runda 2"}
+        # No preparation time: right before a round all started rounds are visible.
+        self.assertEqual(self._visible_rounds(self.user1, _date(2) - timedelta(seconds=1)), {self.trial.name, "Runda 1"})
+        # During a round only that round is visible, from its exact start.
+        self.assertEqual(self._visible_rounds(self.user1, _date(2)), {"Runda 2"})
+        self.assertEqual(self._visible_rounds(self.user1, _date(2, hour=4, minute=59)), {"Runda 2"})
+        # After it ends everything is visible again.
+        self.assertEqual(self._visible_rounds(self.user1, _date(2, hour=5) + timedelta(seconds=1)), everything_started)
+        self.assertEqual(self._visible_rounds(User.objects.get(username="test_admin"), _date(2, hour=1)), everything_started)
+
 
 class TestCampPanel(CampTestCase):
     def _url(self, name, **kwargs):
