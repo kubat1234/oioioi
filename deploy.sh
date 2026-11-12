@@ -10,8 +10,12 @@
 # service runs migrations, web waits for it) → wait until web is healthy and
 # the site answers. Rolling back: ./deploy.sh <previous version>; if the new
 # version migrated the database, restore the backup printed below first.
+#
+# Backups go to SIO_BACKUP_DIR (default: $SIO_DATA_DIR/backups); only the
+# newest SIO_BACKUP_KEEP (default 5) backups made by this script are kept.
+# The script may be called through a symlink (e.g. ~/deploy.sh).
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$(readlink -f "$0")")"
 
 REPO=kubat1234/oioioi
 FORCE=0
@@ -19,7 +23,7 @@ VERSION=""
 for arg in "$@"; do
     case "$arg" in
         --force) FORCE=1 ;;
-        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
         *) VERSION="$arg" ;;
     esac
 done
@@ -29,6 +33,8 @@ env_value() { grep -E "^$1=" .env | tail -n1 | cut -d= -f2- || true; }
 SIO_DATA_DIR=$(env_value SIO_DATA_DIR)
 SIO_PORT=$(env_value SIO_PORT); SIO_PORT=${SIO_PORT:-8888}
 CURRENT=$(env_value SIO_TAG); CURRENT=${CURRENT:-latest}
+BACKUP_DIR=$(env_value SIO_BACKUP_DIR); BACKUP_DIR=${BACKUP_DIR:-${SIO_DATA_DIR:?set SIO_DATA_DIR in .env}/backups}
+BACKUP_KEEP=$(env_value SIO_BACKUP_KEEP); BACKUP_KEEP=${BACKUP_KEEP:-5}
 
 echo "Current version: $CURRENT"
 
@@ -64,11 +70,20 @@ echo "==> Pulling $VERSION (the site keeps running)"
 SIO_TAG="$VERSION" docker compose pull migrate web worker
 
 echo "==> Database backup"
-backup_dir="${SIO_DATA_DIR:-.}/backups"
-mkdir -p "$backup_dir"
-backup="$backup_dir/oioioi-$(date +%Y%m%d-%H%M%S)-before-$VERSION.dump"
-docker compose exec -T db pg_dump -U oioioi -Fc oioioi > "$backup"
+mkdir -p "$BACKUP_DIR"
+backup="$BACKUP_DIR/oioioi-$(date +%Y%m%d-%H%M%S)-before-$VERSION.dump"
+if ! docker compose exec -T db pg_dump -U oioioi -Fc oioioi > "$backup" || [ ! -s "$backup" ]; then
+    rm -f "${backup:?}"
+    echo "!! Backup failed, nothing changed."
+    exit 1
+fi
 echo "    $backup ($(du -h "$backup" | cut -f1))"
+# Only backups made by this script (oioioi-*-before-*.dump), newest first by name.
+old=$(find "$BACKUP_DIR" -maxdepth 1 -name 'oioioi-*-before-*.dump' -printf '%f\n' | sort -r | tail -n +$((BACKUP_KEEP + 1)))
+for f in $old; do
+    rm -f "${BACKUP_DIR:?}/${f:?}"
+    echo "    removed old backup $f"
+done
 
 echo "==> Switching .env to SIO_TAG=$VERSION"
 if grep -qE '^SIO_TAG=' .env; then
