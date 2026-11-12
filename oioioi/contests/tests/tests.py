@@ -28,6 +28,7 @@ from rest_framework.test import APITestCase
 from oioioi.base.permissions import is_superuser
 from oioioi.base.tests import TestCase, TestsUtilsMixin, check_not_accessible, fake_time
 from oioioi.base.tests.tests import TestPublicMessage
+from oioioi.contests.controllers import get_badge_class
 from oioioi.contests.current_contest import ContestMode
 from oioioi.contests.date_registration import date_registry
 from oioioi.contests.models import (
@@ -4277,6 +4278,40 @@ class TestStatusBadgeDoesNotLeakScore(TestCase):
 
         self.assertContains(response, "text-bg-danger")
         self.assertNotContains(response, "text-bg-success")
+
+
+class TestPendingStatusBadge(TestCase):
+    """Statuses without a color of their own, like Pending, get a dark grey
+    badge (Bootstrap 5 has no ``badge-secondary``, so it used to be invisible).
+    """
+
+    fixtures = [
+        "test_users",
+        "test_contest",
+        "test_full_package",
+        "test_problem_instance",
+    ]
+
+    def test_pending_badge_is_grey(self):
+        Submission.objects.create(
+            problem_instance=ProblemInstance.objects.get(pk=1),
+            user=User.objects.get(username="test_user"),
+            status="?",
+            kind="NORMAL",
+            date=datetime(2012, 7, 20, tzinfo=UTC),
+        )
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(datetime(2012, 8, 5, tzinfo=UTC)):
+            response = self.client.get(reverse("problems_list", kwargs={"contest_id": "c"}), follow=True)
+        self.assertContains(response, '<span class="badge text-bg-secondary"')
+        self.assertContains(response, "Pending")
+        self.assertNotContains(response, "badge-secondary")
+
+    def test_badge_classes(self):
+        self.assertEqual(get_badge_class("?"), "text-bg-secondary")
+        self.assertEqual(get_badge_class("IGN"), "text-bg-secondary")
+        self.assertEqual(get_badge_class("TESTRUN_OK"), "text-bg-success")
+        self.assertEqual(get_badge_class("CE"), "text-bg-danger")
 
 
 class TestSubmissionsLinksOnListView(TestCase):
