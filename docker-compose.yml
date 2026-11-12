@@ -5,6 +5,13 @@
 # The image is built by CI and released with the Release workflow; update the
 # server with ./deploy.sh (backup, pull, migrations, restart, check), not by
 # building here. SIO_TAG selects the release (e.g. v2026.11.12).
+#
+# The image does not contain sandboxes (compilers etc.): they live in the
+# filetracker directory on the host. A NEW server (empty filetracker) uploads
+# them once, with web running:
+#   docker compose exec web bash -c "/sio2/oioioi/download_sandboxes.sh -q -y -d /tmp/sandboxes \
+#     -m https://downloads.sio2project.mimuw.edu.pl/sandboxes/Manifest \
+#     && ./manage.py upload_sandboxes_to_filetracker -d /tmp/sandboxes"
 name: sio
 
 x-image: &image '${SIO_IMAGE:-ghcr.io/kubat1234/oioioi}:${SIO_TAG:-latest}'
