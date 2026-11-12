@@ -586,6 +586,14 @@ class ContestController(RegisteredSubclassesBase, ObjectWithMixins):
     def default_can_see_statement(self, request_or_context, problem_instance):
         return True
 
+    def show_last_submission_status(self, request):
+        """Determines whether the problems list shows the status of the
+        user's latest submission to each problem.
+
+        The default implementation shows it to every logged-in user.
+        """
+        return request.user.is_authenticated
+
     def can_see_problems_limits(self, request):
         context = self.make_context(request)
         lvc = LimitsVisibilityConfig.objects.filter(contest=context.contest)

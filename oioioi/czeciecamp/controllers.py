@@ -147,6 +147,10 @@ class CzecieCampContestController(ProgrammingContestController):
     def separate_public_results(self):
         return True
 
+    def show_last_submission_status(self, request):
+        # The problems list of a camp shows only the score.
+        return False
+
     def results_visible(self, request, submission):
         if get_camp_config(self.contest).results_visible_during_round:
             return True

@@ -756,6 +756,25 @@ class TestCampRoundSubmissionsLimit(CampTestCase):
         self.assertEqual((form["round_submissions_limit"].value(), form["submissions_limit"].value()), (50, 0))
 
 
+class TestCampProblemsListStatus(CampTestCase):
+    def test_no_status_of_the_latest_submission(self):
+        Submission.objects.create(user=self.user1, problem_instance=self.pi1, date=_date(1, hour=1), kind="NORMAL", status="CE")
+        self.assertFalse(self.contest.controller.show_last_submission_status(self._request()))
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(1, hour=2)):
+            response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
+        self.assertContains(response, "abc")
+        self.assertNotContains(response, "Compilation failed")
+        self.assertNotContains(response, '<span class="badge')
+
+    def _request(self):
+        request = RequestFactory().get("/")
+        request.user = self.user1
+        request.contest = self.contest
+        request.timestamp = _date(1, hour=2)
+        return request
+
+
 class TestCampPanel(CampTestCase):
     def _url(self, name, **kwargs):
         return reverse(name, kwargs=dict(contest_id=self.contest.id, **kwargs))
