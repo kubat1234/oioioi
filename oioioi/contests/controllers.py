@@ -586,6 +586,13 @@ class ContestController(RegisteredSubclassesBase, ObjectWithMixins):
     def default_can_see_statement(self, request_or_context, problem_instance):
         return True
 
+    def problems_list_result_badge_class(self, request, result):
+        """Extra CSS classes of the score badge of a
+        :class:`~oioioi.contests.models.UserResultForProblem` on the problems
+        list. The default implementation adds none.
+        """
+        return ""
+
     def show_last_submission_status(self, request):
         """Determines whether the problems list shows the status of the
         user's latest submission to each problem.

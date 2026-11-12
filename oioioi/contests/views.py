@@ -202,6 +202,7 @@ def problems_list_view(request):
             # Some controllers may hide score even if UserResultForProblem exists
             if r and r.submission_report and controller.can_see_submission_score(request, r.submission_report.submission):
                 results_map[r.problem_instance_id] = r
+                r.extra_badge_class = controller.problems_list_result_badge_class(request, r)
 
         if show_status:
             # For each problem instance, fetch only the single latest NORMAL

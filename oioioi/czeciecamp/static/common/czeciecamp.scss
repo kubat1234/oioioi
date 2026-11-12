@@ -76,3 +76,8 @@ $camp-after-freeze-bg: #fff3c4;
     background-color: $camp-after-freeze-bg !important;
   }
 }
+
+// Problems list: full points scored while the round was running.
+.badge.camp-full-in-round {
+  box-shadow: 0 0 8px 3px rgb(240, 180, 0);
+}

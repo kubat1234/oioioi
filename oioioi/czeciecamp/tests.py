@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from oioioi.base.tests import TestCase, fake_time
-from oioioi.contests.models import Contest, ProblemInstance, Round, ScoreReport, Submission, SubmissionReport
+from oioioi.contests.models import Contest, ProblemInstance, Round, ScoreReport, Submission, SubmissionReport, UserResultForProblem
 from oioioi.contests.scores import IntegerScore
 from oioioi.czeciecamp.controllers import after_freeze_text
 from oioioi.czeciecamp.forms import make_contest_id
@@ -773,6 +773,82 @@ class TestCampProblemsListStatus(CampTestCase):
         request.contest = self.contest
         request.timestamp = _date(1, hour=2)
         return request
+
+
+class TestCampGoldFrame(CampTestCase):
+    """Full points get a gold frame on the problems list if some submission
+    got them while the round was running (round 1: day 1, 0:00-5:00).
+    """
+
+    DURING, AFTER = _date(1, hour=1), _date(1, hour=7)
+
+    def _send(self, date, score, pi=None):
+        pi = pi or self.pi1
+        submission = Submission.objects.create(
+            user=self.user1,
+            problem_instance=pi,
+            date=date,
+            kind="NORMAL",
+            status="INI_OK",
+            score=IntegerScore(score),
+            max_score=IntegerScore(100),
+        )
+        report = SubmissionReport.objects.create(submission=submission, status="ACTIVE", kind="NORMAL")
+        ScoreReport.objects.create(submission_report=report, status="OK", score=IntegerScore(score), max_score=IntegerScore(100))
+        pi.problem.controller.update_user_results(self.user1, pi)
+
+    def _frame(self, pi=None):
+        request = RequestFactory().get("/")
+        request.user = self.user1
+        request.contest = self.contest
+        request.timestamp = _date(2)
+        result = UserResultForProblem.objects.get(user=self.user1, problem_instance=pi or self.pi1)
+        return self.contest.controller.problems_list_result_badge_class(request, result)
+
+    def test_full_points_during_the_round(self):
+        self._send(self.DURING, 100)
+        self.assertEqual(self._frame(), "camp-full-in-round")
+
+    def test_full_points_only_after_the_round(self):
+        self._send(self.DURING, 60)
+        self._send(self.AFTER, 100)
+        self.assertEqual(self._frame(), "")
+
+    def test_full_points_during_and_after_the_round(self):
+        self._send(self.DURING, 100)
+        self._send(self.AFTER, 100)
+        self.assertEqual(self._frame(), "camp-full-in-round")
+
+    def test_no_full_points_shown(self):
+        self._send(self.DURING, 50)
+        self._send(self.AFTER, 80)
+        self.assertEqual(self._frame(), "")
+        # Full points during the round, but the score shown is a later one.
+        self._send(self.DURING, 100, pi=self.pi2)
+        self._send(_date(2, hour=7), 80, pi=self.pi2)
+        self.assertEqual(self._frame(self.pi2), "")
+
+    def test_trial_round_and_problem_without_round(self):
+        # A trial round counts as ended right after it starts.
+        self._send(_date(0, hour=1), 100, pi=self.pi_trial)
+        self.assertEqual(self._frame(self.pi_trial), "")
+        self._send(self.DURING, 100)
+        self.pi1.round = None
+        self.pi1.save()
+        self.assertEqual(self._frame(), "")
+
+    def test_result_without_score(self):
+        UserResultForProblem.objects.create(user=self.user1, problem_instance=self.pi1)
+        self.assertEqual(self._frame(), "")
+
+    def test_problems_list(self):
+        self._send(self.DURING, 100)
+        self._send(self.DURING, 30, pi=self.pi2)
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(3)):
+            response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
+        self.assertContains(response, '<div class="badge text-bg-success camp-full-in-round">', html=False)
+        self.assertContains(response, '<div class="badge text-bg-warning ">', html=False)
 
 
 class TestCampPanel(CampTestCase):
