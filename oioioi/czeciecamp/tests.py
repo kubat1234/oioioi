@@ -2,7 +2,7 @@ import importlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, User
 from django.test import RequestFactory, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -518,6 +518,97 @@ class TestCampSubmitting(CampTestCase):
         # After it ends everything is visible again.
         self.assertEqual(self._visible_rounds(self.user1, _date(2, hour=5) + timedelta(seconds=1)), everything_started)
         self.assertEqual(self._visible_rounds(User.objects.get(username="test_admin"), _date(2, hour=1)), everything_started)
+
+
+class TestCampSubmissionsLimit(CampTestCase):
+    def setUp(self):
+        super().setUp()
+        self.pi1.submissions_limit = 3
+        self.pi1.save()
+        self.controller = self.contest.controller
+
+    def _request(self, user):
+        request = RequestFactory().get("/")
+        request.user = user
+        request.contest = self.contest
+        request.timestamp = _date(1, hour=1)
+        return request
+
+    def _send(self, status, user=None, kind="NORMAL"):
+        return Submission.objects.create(user=user or self.user1, problem_instance=self.pi1, date=_date(1, hour=1), kind=kind, status=status)
+
+    def _left(self, user=None):
+        return self.controller.get_submissions_left(self._request(user or self.user1), self.pi1)
+
+    def test_compilation_errors_do_not_count(self):
+        for status in ("CE", "CE", "OK", "WA"):
+            self._send(status)
+        request = self._request(self.user1)
+        self.assertEqual(self.controller.get_submissions_count(request, self.pi1), 2)
+        self.assertEqual(self._left(), 1)
+        self.assertFalse(self.controller.is_submissions_limit_exceeded(request, self.pi1))
+        self._send("TLE")
+        self.assertEqual(self._left(), 0)
+        self.assertTrue(self.controller.is_submissions_limit_exceeded(request, self.pi1))
+
+    def test_other_statuses_count(self):
+        self.pi1.submissions_limit = 100
+        self.pi1.save()
+        statuses = ("?", "OK", "WA", "TLE", "MLE", "OLE", "RE", "RV", "SE", "ERR", "MSE", "MCE")
+        for status in statuses:
+            self._send(status)
+        self.assertEqual(self.controller.get_submissions_count(self._request(self.user1), self.pi1), len(statuses))
+
+    def test_pending_submission_comes_back_after_compilation_error(self):
+        pending = self._send("?")
+        self.assertEqual(self._left(), 2)
+        pending.status = "CE"
+        pending.save()
+        self.assertEqual(self._left(), 3)
+
+    def test_other_users_and_ignored_submissions_do_not_count(self):
+        self._send("OK", user=self.user2)
+        self._send("OK", kind="IGNORED")
+        self.assertEqual(self._left(), 3)
+
+    def test_no_limit(self):
+        self.pi1.submissions_limit = 0
+        self.pi1.save()
+        self._send("OK")
+        self.assertIsNone(self._left())
+        self.assertFalse(self.controller.is_submissions_limit_exceeded(self._request(self.user1), self.pi1))
+
+    def test_admin_and_anonymous(self):
+        self.assertIsNone(self._left(User.objects.get(username="test_admin")))
+        anonymous = self._request(AnonymousUser())
+        self.assertEqual(self.controller.get_submissions_count(anonymous, self.pi1), 0)
+        self.assertIsNone(self.controller.get_submissions_left(anonymous, self.pi1))
+
+    def test_problem_instance_controller_uses_camp_count(self):
+        # Views and the submit form ask through ProblemInstanceController.
+        self._send("CE")
+        self._send("OK")
+        request = self._request(self.user1)
+        self.assertEqual(self.pi1.controller.get_submissions_left(request, self.pi1), 2)
+        self.assertFalse(self.pi1.controller.is_submissions_limit_exceeded(request, self.pi1, "NORMAL"))
+
+    def test_problems_list_and_submit_form(self):
+        # The submit form needs a programming problem.
+        problem = self.pi1.problem
+        problem.controller_name = "oioioi.programs.controllers.ProgrammingProblemController"
+        problem.save()
+        for status in ("CE", "OK", "WA"):
+            self._send(status)
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(1, hour=1)):
+            response = self.client.get(reverse("problems_list", kwargs={"contest_id": self.contest.id}))
+            self.assertContains(response, "1 of 3")
+            self._send("OK")
+            response = self.client.post(
+                reverse("submit", kwargs={"contest_id": self.contest.id}),
+                {"problem_instance_id": self.pi1.id, "code": "int main() {}", "prog_lang": "C++"},
+            )
+        self.assertContains(response, "Submission limit for the problem")
 
 
 class TestCampPanel(CampTestCase):

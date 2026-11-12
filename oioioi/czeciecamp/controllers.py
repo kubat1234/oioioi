@@ -209,6 +209,30 @@ class CzecieCampContestController(ProgrammingContestController):
         rtimes = self.get_round_times(request, problem_instance.round)
         return not rtimes.is_future(request.timestamp)
 
+    # The default implementation lets the problem controller count all
+    # submissions; a camp does not count compilation errors, so it counts here.
+    def get_submissions_count(self, request, problem_instance, kind=None):
+        """Submissions that use up the limit: all but compilation errors."""
+        if request.user.is_anonymous:
+            return 0
+        if kind is None:
+            kind = self.get_default_submission_kind(request)
+        return Submission.objects.filter(user=request.user, problem_instance=problem_instance, kind=kind).exclude(status="CE").count()
+
+    def get_submissions_left(self, request, problem_instance, kind=None):
+        if request.user.is_anonymous:
+            return None
+        if kind is None:
+            kind = self.get_default_submission_kind(request)
+        limit = self.get_submissions_limit(request, problem_instance, kind)
+        if not limit:
+            return None
+        return max(0, limit - self.get_submissions_count(request, problem_instance, kind))
+
+    def is_submissions_limit_exceeded(self, request, problem_instance, kind=None):
+        submissions_left = self.get_submissions_left(request, problem_instance, kind)
+        return submissions_left is not None and submissions_left <= 0
+
 
 class CzecieCampRankingController(DefaultRankingController):
     """Rankings of a camp, defined by ``CampRanking`` objects; a partial key
