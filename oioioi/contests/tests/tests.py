@@ -28,7 +28,7 @@ from rest_framework.test import APITestCase
 from oioioi.base.permissions import is_superuser
 from oioioi.base.tests import TestCase, TestsUtilsMixin, check_not_accessible, fake_time
 from oioioi.base.tests.tests import TestPublicMessage
-from oioioi.contests.controllers import get_badge_class
+from oioioi.contests.controllers import get_badge_class, get_score_badge_class, get_submission_badge_class
 from oioioi.contests.current_contest import ContestMode
 from oioioi.contests.date_registration import date_registry
 from oioioi.contests.models import (
@@ -4312,6 +4312,68 @@ class TestPendingStatusBadge(TestCase):
         self.assertEqual(get_badge_class("IGN"), "text-bg-secondary")
         self.assertEqual(get_badge_class("TESTRUN_OK"), "text-bg-success")
         self.assertEqual(get_badge_class("CE"), "text-bg-danger")
+
+
+class TestStatusBadgeColorFollowsScore(TestCase):
+    """Once the score of a submission is known, its status badge has the
+    color of the score badge (full: green, some: yellow, none: red).
+    """
+
+    fixtures = [
+        "test_users",
+        "test_contest",
+        "test_full_package",
+        "test_problem_instance",
+    ]
+
+    def _submission(self, status, score=None, max_score=100):
+        return Submission(
+            status=status,
+            score=IntegerScore(score) if score is not None else None,
+            max_score=IntegerScore(max_score) if score is not None else None,
+        )
+
+    def test_known_score(self):
+        for status, score, expected in (
+            ("INI_OK", 100, "text-bg-success"),
+            ("INI_OK", 30, "text-bg-warning"),
+            ("INI_OK", 0, "text-bg-danger"),
+            ("INI_ERR", 40, "text-bg-warning"),
+            ("OK", 100, "text-bg-success"),
+        ):
+            self.assertEqual(get_submission_badge_class(self._submission(status, score), True), expected, (status, score))
+
+    def test_unknown_score_uses_status(self):
+        self.assertEqual(get_submission_badge_class(self._submission("INI_OK", 0), False), "text-bg-success")
+        self.assertEqual(get_submission_badge_class(self._submission("INI_ERR", 100), False), "text-bg-danger")
+        self.assertEqual(get_submission_badge_class(self._submission("CE"), True), "text-bg-danger")
+        self.assertEqual(get_submission_badge_class(self._submission("?"), True), "text-bg-secondary")
+
+    def test_score_that_cannot_be_compared(self):
+        self.assertIsNone(get_score_badge_class(object(), IntegerScore(100)))
+        submission = self._submission("INI_OK", 50)
+        submission.score = object()
+        self.assertEqual(get_submission_badge_class(submission, True), "text-bg-success")
+
+    def test_problems_list(self):
+        user = User.objects.get(username="test_user")
+        Submission.objects.create(
+            problem_instance=ProblemInstance.objects.get(pk=1),
+            user=user,
+            status="INI_OK",
+            score=IntegerScore(30),
+            max_score=IntegerScore(100),
+            kind="NORMAL",
+            date=datetime(2012, 7, 20, tzinfo=UTC),
+        )
+        self.assertTrue(self.client.login(username="test_user"))
+        url = reverse("problems_list", kwargs={"contest_id": "c"})
+        with fake_time(datetime(2012, 8, 5, tzinfo=UTC)):
+            self.assertContains(self.client.get(url, follow=True), '<span class="badge text-bg-warning"')
+        # Scores hidden: the color of the status.
+        Round.objects.filter(pk=1).update(results_date=datetime(2099, 1, 1, tzinfo=UTC))
+        with fake_time(datetime(2012, 8, 5, tzinfo=UTC)):
+            self.assertContains(self.client.get(url, follow=True), '<span class="badge text-bg-success"')
 
 
 class TestSubmissionsLinksOnListView(TestCase):
