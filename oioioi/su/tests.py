@@ -181,6 +181,9 @@ class TestSwitchingUsers(TestCase):
     def test_users_list(self):
         self.assertTrue(self.client.login(username="test_admin"))
         response = self.client.get(reverse("get_suable_users"), {"substr": ""})
+        self.assertEqual(response.status_code, 404)
+        # Spaces alone used to end with a server error.
+        response = self.client.get(reverse("get_suable_users"), {"substr": "   "})
         self.assertEqual(404, response.status_code)
         response = self.client.get(reverse("get_suable_users"))
         self.assertEqual(404, response.status_code)

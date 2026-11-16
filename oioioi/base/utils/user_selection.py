@@ -52,7 +52,8 @@ def _get_user_hints(substr, queryset, user_field_name=None):
     if substr is None:
         return None
     substr = str(substr)
-    if len(substr) < 2:
+    # Whitespace alone is nothing to search for.
+    if len(substr) < 2 or not substr.strip():
         return None
     q_expression = _get_user_q_expression(substr, user_field_name)
     if user_field_name is not None:

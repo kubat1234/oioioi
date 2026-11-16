@@ -14,7 +14,7 @@ from oioioi.base.tests import (
     needs_linux,
 )
 from oioioi.base.utils.archive import Archive
-from oioioi.contests.models import Contest, ProblemInstance, Submission
+from oioioi.contests.models import Contest, ProblemInstance, Round, Submission
 from oioioi.evalmgr.tasks import create_environ
 from oioioi.filetracker.client import get_client
 from oioioi.filetracker.storage import FiletrackerStorage
@@ -281,6 +281,29 @@ class TestHandlers(TestCase):
         "test_problem_instance",
         "test_testrun",
     ]
+
+    def test_problem_with_test_runs_in_two_contests(self):
+        """Each instance of a problem has its own test run config, with its own limits."""
+        submission = TestRunProgramSubmission.objects.get(pk=1)
+        own = TestRunConfig.objects.get(problem_instance=submission.problem_instance)
+        own.time_limit = 1234
+        own.save()
+        other_contest = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        other_round = Round.objects.create(contest=other_contest, name="Round")
+        other = ProblemInstance.objects.create(problem=submission.problem_instance.problem, contest=other_contest, round=other_round, short_name="zad1")
+        TestRunConfig.objects.create(problem_instance=other, time_limit=9999, memory_limit=1)
+
+        environ = create_environ()
+        environ.update(
+            job_id="job_id",
+            submission_id=submission.id,
+            problem_instance_id=submission.problem_instance_id,
+            problem_id=submission.problem_instance.problem_id,
+            contest_id=submission.problem_instance.contest_id,
+            compilation_result="OK",
+        )
+        environ = handlers.make_test(environ)
+        self.assertEqual(environ["tests"]["test"]["exec_time_limit"], 1234)
 
     def test_handlers(self):
         submission = TestRunProgramSubmission.objects.get(pk=1)
