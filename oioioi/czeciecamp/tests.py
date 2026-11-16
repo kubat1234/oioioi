@@ -737,6 +737,7 @@ class TestCampRoundSubmissionsLimit(CampTestCase):
             "round": self.round1.id,
             "short_name": "abc",
             "submissions_limit": 3,
+            "execution_mode": "AUTO",
             "camp_settings-TOTAL_FORMS": 1,
             "camp_settings-INITIAL_FORMS": 0,
             "camp_settings-MIN_NUM_FORMS": 0,
