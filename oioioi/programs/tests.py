@@ -2313,6 +2313,8 @@ class TestAllowedLanguages(TestCase, SubmitFileMixin):
 
     def test_disallowed_preferred_language_not_selected(self):
         ProblemAllowedLanguage.objects.create(problem=self.problem, language="C")
+        # Fork: a single allowed language is always preselected, so allow two.
+        ProblemAllowedLanguage.objects.create(problem=self.problem, language="C++")
         user = User.objects.get(username="test_user")
         ensure_preferences_exist_for_user(user)
         user.userpreferences.programming_language = "Python"
