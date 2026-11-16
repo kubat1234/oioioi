@@ -4,6 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OIOIOI is the Django web interface of SIO2, a platform for algorithmic contests (szkopul.edu.pl, Polish Olympiad in Informatics). Python 3.13, Django 5.2, PostgreSQL, Celery/RabbitMQ, Filetracker for file storage, sioworkers for judging.
 
+This repository is the **Czecie fork** (`kubat1234/oioioi`): one production instance for olympiad training camps, ~150 participants, several groups at once, each group being its own contest.
+
+Read next, in this order:
+
+- `docs/ARCHITECTURE.md` — apps, the submission → judging → ranking flow, the camp rules and where they live, what the fork changes in upstream code, pitfalls.
+- `AGENTS.md` — upstream's generic guide for coding agents (code style, test conventions). **Where it differs from this file, this file wins** (branch names, PR workflow, CI).
+- `MERGE_REPORT.md` — the upstream merge of 2026-11-16: every place both sides changed, open decisions, the pre-deploy checklist.
+- `REVIEW.md` — findings of the 2026-11 review, fixed and open.
+
 ## Git workflow (fork kubat1234/oioioi)
 
 - The main branch is `main` (renamed from `czecie-camp`). The remote of the fork may be called `fork` or `origin` in a clone — check `git remote -v`.
@@ -12,6 +21,8 @@ OIOIOI is the Django web interface of SIO2, a platform for algorithmic contests 
 - Production (`docker-compose.yml`) runs the released image `ghcr.io/kubat1234/oioioi:${SIO_TAG}`; it is updated only with `./deploy.sh <version>` (refuses during a running round, backs up the DB, runs migrations in the one-shot `migrate` service before `web` starts). Do not build images on the server.
 - Releases: Actions → Release → Run workflow (`.github/workflows/release.yml`) tags the already built image of the current `main` commit as `vYYYY.MM.DD[.N]` and `latest` and creates a GitHub Release with generated notes. Never create `v*` tags by hand.
 - `sio2project/oioioi` `master` is upstream (`origin/master` in the maintainer's clone). Do NOT merge upstream into `main` without the maintainer's explicit OK. PRs meant for upstream branch from upstream `master`, not from `main`.
+- Merging upstream: on a branch (`merge-upstream`), as a real merge; fixes after the merge as separate commits; write up every file both sides changed (see `MERGE_REPORT.md` for the format). Read the upstream diff of `oioioi/default_settings.py` and `Dockerfile` line by line — they change production behaviour without touching fork code. The PR of such a branch must be merged with **"Create a merge commit", not squashed**: a squash drops upstream from the history of `main` and the next upstream merge conflicts on everything again.
+- Keep changes to upstream files minimal and local (a hook on a controller instead of an edit in a view, a new template instead of a rewritten one): every changed upstream line is a future merge conflict. No drive-by refactors, reformatting or dependency bumps.
 
 ## Development environment (Docker)
 
@@ -37,13 +48,23 @@ Settings: `/sio2/deployment/settings.py` is generated from `oioioi/deployment/se
 
 ## Tests and lint
 
-pytest with `DJANGO_SETTINGS_MODULE=oioioi.test_settings` (see `pytest.ini`; runs with `--nomigrations`, deprecation warnings are errors). Tests must run inside the `web` container:
+pytest with `DJANGO_SETTINGS_MODULE=oioioi.test_settings` (see `pytest.ini`; SQLite, runs with `--nomigrations`, deprecation warnings are errors). CI runs `./test.sh -n auto --migrations`. Usually run inside the `web` container:
 
 ```bash
 ./easy_toolbox.py test                                                    # whole suite, parallel
 docker compose -f docker-compose-dev.yml exec -T web ../oioioi/test.sh oioioi/<app>
 docker compose -f docker-compose-dev.yml exec -T web ../oioioi/test.sh oioioi/<app>/tests.py::TestClass::test_method
 ./easy_toolbox.py test-slow                                               # includes @pytest.mark.slow (--runslow)
+```
+
+Without Docker the suite also runs natively: `uv sync` (needs `libpq-dev libdb-dev libmemcached-dev`), then `./test.sh -n 8 oioioi/<app>`. Tests that need `node_modules`, a browser or missing LaTeX packages are skipped or fail there (`mailsubmit` needs `texlive-pstricks`), so compare with a run of `main` before blaming a change.
+
+Before a PR, the same checks as CI:
+
+```bash
+ruff check && ruff format --check
+python -m django makemigrations --check --dry-run     # with test settings and an in-memory DB, see czecie-ci.yml
+./test.sh -n auto --migrations
 ```
 
 Test-only apps must be listed in `oioioi/test_settings.py` `INSTALLED_APPS`. `MOCK_RANKINGSD = True` there makes rankings serialize synchronously. Tests mostly use JSON fixtures from `<app>/fixtures/` and `oioioi.base.tests.TestCase` / `fake_time`.
@@ -56,24 +77,39 @@ ruff check --fix oioioi/<app> && ruff format oioioi/<app>
 
 After model changes: `python manage.py makemigrations <app>` (in `/sio2/deployment`) and commit the migration. Frontend assets are built with webpack (`package.json`: `build`, `watch`, `lint`); `./easy_toolbox.py eslint` / `npm`. E2E: Cypress via `./test_cypress.sh` (see `GUIDE.md`).
 
-## Architecture
+## Architecture in one screen
 
-**Apps.** `oioioi/` contains ~70 Django apps, one per feature. A core set is always in `INSTALLED_APPS` (`default_settings.py`: `base`, `contests`, `problems`, `programs`, `sinolpack`, `rankings`, `evalmgr`, `sioworkers`, `filetracker`, `questions`, `quizzes`, `interactive`, ...). Others are optional and enabled per deployment. `check_django_app_dependencies` in a module asserts required apps.
+Details and the full flow are in `docs/ARCHITECTURE.md`.
 
-**URLs are autodiscovered.** `oioioi/urls.py` imports every installed app's `views`, `controllers` and `urls` at startup (views register menu items via decorators; controllers register mixins at import). An app's `urls.py` defines `contest_patterns` (prefixed with `/c/<contest_id>/`, request gets `request.contest`), `urlpatterns` (both with and without prefix) and/or `noncontest_patterns` — see `oioioi/contests/urls.py`. URL names are referenced without namespace.
+- `oioioi/` holds ~75 Django apps. A core set is always installed (`default_settings.py`); the rest is enabled in the deployment's `settings.py`. `oioioi/urls.py` autodiscovers every installed app's `views`, `controllers` and `urls` (`contest_patterns` live under `/c/<contest_id>/` with `request.contest` set).
+- **Controllers are the extension mechanism.** `Contest.controller_name` → a `ContestController` subclass (a contest type); `Problem.controller_name` → a `ProblemController`. Apps add behaviour to all controllers of a class with `SomeController.mix_in(Mixin)`; admin classes take mixins too.
+- **Permissions** are composable request conditions (`base/permissions.py`): `enforce_condition(contest_exists & is_contest_basicadmin)`.
+- **Judging**: `submit_view` → `controller.create_submission` → `judge` → an `evalmgr` Celery job runs a *recipe* of handlers (`programs/controllers.py`, `programs/handlers.py`) → sioworkers → `SubmissionReport`/`TestReport` → `update_user_results` → `submission_judged` invalidates rankings.
+- **Rankings** are computed by the `rankingsd` daemon and cached per `(contest, full key)` in `rankings.models.Ranking`. Whatever a ranking depends on must invalidate it (`Ranking.invalidate_contest`, `invalidate_pi`).
+- **Problems**: upload → `unpackmgr` Celery job → `sinolpack/package.py` → tests, model solutions, statements. A `ProblemInstance` attaches a problem to a contest round with its own copy of the tests.
 
-**Controllers are the extension mechanism.** `Contest.controller_name` is a dotted path to a `ContestController` subclass (`contests/controllers.py`); `Problem.controller_name` to a `ProblemController`. Contest types are just controller subclasses (`oi`, `acm`, `pa`, `mp`, ...); every subclass becomes selectable as a contest "type" (`RegisteredSubclassesBase`). Controllers decide: registration (`registration_controller()` → `RegistrationController`/`participants.ParticipantsController`), round times and visibility, `can_submit`, which reports are visible (`results_date` vs `public_results_date`, `separate_public_results()`), scoring (`update_user_result_for_problem`, delegated to the problem controller by default), and rankings (`ranking_controller()`). Apps add behaviour to *all* controllers of a class with `SomeController.mix_in(Mixin)` (`ObjectWithMixins`), e.g. `testrun`, `scoresreveal`, `printing`. Admin classes also take mixins (`ContestAdmin.mix_in`, `ProblemInstanceAdmin.mix_in`).
+## The fork
 
-**Permissions** are composable request conditions (`base/permissions.py`: `make_request_condition`, `enforce_condition(contest_exists & is_contest_basicadmin)`), used on views and menu items (`contests/menu.py` registries).
+Own apps (enabled in production, all listed in `test_settings.py`):
 
-**Problems.** `Problem` is the archive entity; `ProblemInstance` attaches it to a contest round with its own copy of `Test`s and limits (each problem also has a main instance without a contest). Uploads go through `problems/problem_sources.py` → a Celery `unpackmgr` job → a package backend (`sinolpack/package.py` `SinolPackage` for Sinol `.zip/.tgz` packages with `config.yml`, `in/`, `out/`, `prog/`, `doc/`, `attachments/`) → `post_upload_handlers`.
+- `oioioi/czeciecamp` — the camp contest type (`CzecieCampContestController`): one contest = one camp of one group, rounds are days, admins add participants, submitting stays open after a round. Rankings are `CampRanking` rows: `daily_weight × Dzienne + stale_weight × Stałe` over chosen rounds, recomputed from submissions in `CzecieCampRankingController.serialize_ranking` (not from `UserResultForProblem`); freeze, counting end, hidden and disqualified participants, two submission limits. Admin UI: the "Czecie panel" (`/c/<id>/camp/`) and the wizard (`/czeciecamp/create/`). "Dzienne" and "Stałe" are never translated; an "All-time" round is `Round.is_trial`.
+- `oioioi/llmdetect` — flags submissions that look pasted from an LLM; own `README.rst`, `DESIGN.md`, `SETUP.md`.
+- `oioioi/problembase` — catalogue of problems on the instance (families of re-uploaded packages, descriptions, who has seen what). Requires `oioioi.participants`.
 
-**Judging.** Submissions are evaluated by `evalmgr` running a *recipe* (list of handler dotted paths in an `environ` dict) built by `fill_evaluation_environ` on the contest and problem controllers (`programs/controllers.py`, `programs/handlers.py`). Compilation and test runs are dispatched to sioworkers; results become `SubmissionReport`/`TestReport`, scores are `ScoreValue` subclasses (`contests/scores.py`, stored as strings), then `update_user_results` updates `UserResultForProblem/Round/Contest`.
+Changes in upstream apps (full table in `docs/ARCHITECTURE.md` §7): login by username or e-mail with unique e-mails (`base/auth.py`, `base/utils/user.py`), partial rejudges (`programs/handlers.py::collect_tests`, `contests/forms.py`), per-contest allowed languages (`programs`), hidden problems/rounds in the API (`contests/api.py`), package files tree (`problems/problem_site.py`), controller hooks for the problems list and rejudges (`contests/controllers.py`), production `docker-compose.yml` + `deploy.sh` + fork CI.
 
-**Rankings** are computed asynchronously by the `rankingsd` daemon and cached per `(contest, full key)` in `rankings.models.Ranking`; controllers must invalidate them (`invalidate_pi`, `Ranking.invalidate_contest`). A *partial key* (in URLs) selects the ranking; the *full key* adds the viewer's permission level (`admin#c`, `regular#<round_id>`).
+## Pitfalls
 
-**Local app `czeciecamp`** (Czecie Camp Contest, for OI training camps): one contest = one camp, rounds are camp days, participants added by admins only, submissions allowed after a round ends. Rankings Dzienne+Stałe / Stałe / Dzienne / per round, computed from submissions in `CzecieCampRankingController.serialize_ranking`; freeze after the last non-trial round until unfrozen; disqualifications (if `oioioi.disqualification` is installed) remove a participant (whole contest) or zero a problem (one submission), admins see them marked; per-camp settings in `CzecieCampConfig` (counting end, daily weight, round order). Admin UI is the "Camp panel" (`/c/<id>/camp/`) and the creation wizard (`/czeciecamp/create/`).
+The long list is `docs/ARCHITECTURE.md` §8. The ones that bite most often:
+
+- Production `settings.py` lives on the server and imports `default_settings.py`: changing a default changes production at the next deploy. Sandboxes (compilers) are files in Filetracker, not part of the image.
+- Tests use SQLite, production PostgreSQL (NUL bytes, regex lookups, locking differ).
+- A view that changes anything rankings depend on must call `Ranking.invalidate_contest(contest)`. `serialize_ranking` runs in a daemon, without a real request.
+- Use `request.timestamp`, not `timezone.now()`, in views and controllers.
+- Look objects up with `contest=request.contest`; groups are separate contests on one instance.
+- A mixin on a controller or admin class applies to every contest type — guard camp-only behaviour with `isinstance(contest.controller, CzecieCampContestController)`.
+- Bootstrap 5 only (`data-bs-*`, `text-bg-*`); webpack bundles are referenced with `{% bundle_static %}`.
 
 ## Translations
 
-UI strings use `gettext_lazy as _`; catalogs live in `oioioi/_locale/locale/<lang>/LC_MESSAGES/` and are managed through Transifex (see `CONTRIBUTING.rst`), not edited by hand except for correcting English msgids.
+UI strings use `gettext_lazy as _`; catalogs live in `oioioi/_locale/locale/<lang>/LC_MESSAGES/` and are managed through Transifex (see `CONTRIBUTING.rst`), not edited by hand except for correcting English msgids. Fork strings: the fork's own apps carry their own `locale/pl/`; Polish strings for fork changes inside upstream apps go to `oioioi/_locale/locale-overrides/pl/LC_MESSAGES/` (`.po` and compiled `.mo` are both committed).
