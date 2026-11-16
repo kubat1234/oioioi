@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.admin import AllValuesFieldListFilter, SimpleListFilter, action
 from django.contrib.admin.sites import NotRegistered
 from django.contrib.admin.utils import quote, unquote
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, SuspiciousOperation
 from django.db.models import Case, Count, Exists, F, OuterRef, Q, Subquery, Value, When
 from django.db.models.functions import Coalesce
 from django.forms import ModelForm
@@ -786,6 +786,8 @@ class SubmissionAdmin(admin.ModelAdmin):
         tests = request.POST.getlist("tests", [])
         subs_ids = [int(x) for x in request.POST.getlist("submissions", [])]
         rejudge_type = request.POST["rejudge_type"]
+        if rejudge_type not in ("FULL", "NEW", "SELECTED"):
+            raise SuspiciousOperation("Invalid rejudge type")
         # Only submissions the admin sees on the list (of the current contest).
         submissions = self.get_queryset(request).in_bulk(subs_ids)
         for sub in submissions.values():
