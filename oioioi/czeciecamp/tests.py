@@ -1361,6 +1361,25 @@ class TestCreateCamp(TestCase):
         self.assertEqual(rounds[0].start_date, timezone.make_aware(datetime(2026, 8, 3, 20, 0)))
         self.assertEqual(rounds[3].start_date, timezone.make_aware(datetime(2026, 8, 6, 20, 0)))
 
+    @override_settings(TIME_ZONE="Europe/Warsaw")
+    def test_days_keep_the_local_hour_across_a_dst_change(self):
+        # Summer time ends on 2026-10-25.
+        self.assertTrue(self.client.login(username="test_admin"))
+        data = {
+            "name": "Jesień",
+            "start_date": "2026-10-23T20:00",
+            "days": 3,
+            "daily_weight": 1,
+            "stale_weight": 1,
+            "round_submissions_limit": 50,
+            "submissions_limit": 0,
+        }
+        self.client.post(reverse("czeciecamp_create"), data)
+        rounds = Contest.objects.get(id="jesien").round_set.order_by("start_date")
+        starts = [timezone.localtime(r.start_date) for r in rounds]
+        self.assertEqual([(s.day, s.hour) for s in starts], [(23, 20), (24, 20), (25, 20), (26, 20)])
+        self.assertEqual([r.end_date for r in rounds], [r.start_date for r in rounds])
+
     def test_create_limits_days(self):
         self.assertTrue(self.client.login(username="test_admin"))
         data = {"name": "Duży", "start_date": "2026-08-03T20:00", "days": 1000, "daily_weight": 1, "stale_weight": 1}
