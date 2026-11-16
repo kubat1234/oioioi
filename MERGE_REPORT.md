@@ -20,43 +20,26 @@ w `docker-compose-dev.yml`) jest nietknięty — praca odbywa się w worktree `/
 Rzeczy, których nie rozstrzygałem sam. W każdej zostawiłem wariant zachowawczy (Twoja wersja albo
 niezmieniony upstream) i opisałem alternatywę.
 
-### D1. Domyślne kompilatory zmieniają się na GCC 14 (największe ryzyko wdrożeniowe)
+### D1. Domyślne kompilatory zmieniają się na GCC 14 — ROZSTRZYGNIĘTE
 
 - **Upstream** (`0b3bd1af`, #927) zmienił w `oioioi/default_settings.py`
-  `DEFAULT_COMPILERS`: C `gcc4_8_2_c99` → `gcc14_2_0_c17`, C++ `g++4_8_2_cpp11` → `g++14_2_cpp23_amd64`
-  (i dodał je do `AVAILABLE_COMPILERS`).
-- **Fork** tego miejsca nie zmieniał, więc merge przeszedł automatycznie i nie ma czego „zachowywać”.
-  Twoje `deployment/settings.py` (lokalne dev) **nie nadpisuje** `DEFAULT_COMPILERS`
-  (linia jest zakomentowana), więc zakładam, że produkcyjne też nie.
-- **Skutek po wdrożeniu:** każdy konkurs bez własnego `ContestCompiler`/`ProblemCompiler` zacznie kompilować
-  C++ jako `g++ 14.2 -std=c++23` zamiast `g++ 4.8.2 -std=c++11`. Wymaga to sandboksa `compiler-gcc.14_2_0`
-  w filetrackerze produkcji (jest w oficjalnym Manifeście, ale Twój obraz nie ma wbudowanych sandboksów —
-  trzeba go wgrać ręcznie, patrz komentarz na górze `docker-compose.yml`). Bez sandboksa wszystkie zgłoszenia
-  C/C++ skończą się błędem systemowym. Zmienia się też zachowanie rozwiązań (inne UB, inne czasy), więc
-  rejudge starych obozów da inne wyniki niż wtedy.
-- **Zostawiłem:** wersję upstreamu (nie cofam po cichu cudzej zmiany).
-- **Do wyboru:**
-  1. zaakceptować GCC 14 → przed deployem wgrać sandbox i przetestować jedno zgłoszenie;
-  2. przypiąć stare w produkcyjnym `settings.py`:
-     `DEFAULT_COMPILERS = {'C': 'gcc4_8_2_c99', 'C++': 'g++4_8_2_cpp11', 'Pascal': 'fpc2_6_2', 'Java': 'java1_8', 'Python': 'python', 'Output-only': 'output-only'}`;
-  3. przypiąć stare w `default_settings.py` forka (trwała różnica względem upstreamu).
-- Jeśli produkcja ma już własne `DEFAULT_COMPILERS` w `settings.py`, punkt jest nieaktualny — sprawdź to
-  przed deployem: `grep -n COMPILERS $SIO_DATA_DIR/settings.py`.
+  `DEFAULT_COMPILERS`: C `gcc4_8_2_c99` → `gcc14_2_0_c17`, C++ `g++4_8_2_cpp11` → `g++14_2_cpp23_amd64`.
+  Fork tego miejsca nie zmieniał, merge przeszedł automatycznie.
+- **Decyzja (2026-11-16):** produkcyjne `settings.py` już wcześniej nadpisywało `DEFAULT_COMPILERS` na te
+  nowe kompilatory, więc dla serwera nic się nie zmienia. Zostaje wersja upstreamu.
+- Zmiana dotyczy tylko środowisk bez własnego nadpisania (np. lokalny dev: potrzebny sandbox
+  `compiler-gcc.14_2_0`).
 
-### D2. NUL w komentarzach checkera: usuwać (fork) czy zamieniać na U+FFFD (upstream)
+### D2. NUL w komentarzach checkera — ROZSTRZYGNIĘTE (zachowanie upstreamu)
 
-- **Fork** (`24d50c29`): `oioioi/programs/handlers.py::make_report` i `oioioi/testrun/handlers.py::make_report`
-  robią `.replace("\x00", "")`.
-- **Upstream** (`b4190e3c`, #933): nowa funkcja `sanitize_worker_text` zamienia NUL **i samotne surogaty**
-  na U+FFFD, także w wyjściu kompilatora.
-- Git połączył to bez konfliktu: najpierw Twoje usunięcie, potem `sanitize_worker_text`. Efekt: w komentarzu
-  checkera NUL znika (Twoje zachowanie), surogaty i wyjście kompilatora dostają U+FFFD (upstream).
-  To jedyne miejsce, gdzie intencje się naprawdę wykluczają, więc **zostało Twoje**, a test upstreamu
-  dostosowałem (`ab358d18`).
-- **Rekomendacja:** usunąć oba `.replace("\x00", "")` z forka i przyjąć zachowanie upstreamu. Wtedy znikają dwie
-  różnice względem upstreamu, a w Twoich dwóch testach NUL (`programs/tests.py` ok. linii 2805,
-  `testrun/tests.py` ok. linii 336) wystarczy zmienić oczekiwane `<0x5>` na `<0x\ufffd5>`. Nie zrobiłem tego,
-  bo zmienia widoczny wynik.
+- **Fork** (`24d50c29`) usuwał NUL w `programs/handlers.py::make_report` i `testrun/handlers.py::make_report`.
+- **Upstream** (`b4190e3c`, #933): `sanitize_worker_text` zamienia NUL i samotne surogaty na U+FFFD, także
+  w wyjściu kompilatora.
+- Git połączył to bez konfliktu (najpierw usunięcie forka, potem zamiana upstreamu), więc chwilowo wygrywało
+  zachowanie forka, a test upstreamu był dostosowany w `ab358d18`.
+- **Decyzja (2026-11-16):** przyjąć upstream. Commit `97a5264f` „programs, testrun: sanitize checker comments as
+  upstream does” usuwa oba `.replace("\x00", "")`, przywraca test upstreamu i przestawia dwa testy forka na
+  U+FFFD. `testrun/handlers.py` jest znów identyczny z upstreamem.
 
 ### D3. `CLAUDE.md`: plik forka czy symlink do `AGENTS.md`
 
@@ -221,8 +204,8 @@ Patrz **D3**. Zostaje plik forka; `AGENTS.md` z upstreamu dodany bez zmian.
   - `a426def6` — `test_disallowed_preferred_language_not_selected` (upstream) dopuszczał tylko C i oczekiwał
     braku wybranego języka; u Ciebie jedyny język jest zawsze wybrany. Test dopuszcza teraz C i C++ i nadal
     sprawdza to, o co mu chodzi.
-  - `ab358d18` — `TestMakeReportSanitizesWorkerText.test_checker_comment` oczekuje `"badoutput�"`
-    zamiast `"bad�output�"` (patrz **D2**).
+  - `ab358d18` — chwilowe dostosowanie `TestMakeReportSanitizesWorkerText.test_checker_comment` do usuwania NUL;
+    cofnięte po decyzji **D2** (test jest znów taki jak w upstreamie).
 - **Ryzyko:** brak (testy).
 
 ## 3. Pliki zmienione przez obie strony, zmergowane automatycznie (20 plików)
@@ -231,7 +214,7 @@ Każdy przejrzałem ręcznie po obu stronach.
 
 | Plik | Ja | Upstream | Wynik / ryzyko |
 |---|---|---|---|
-| `Dockerfile` | Warstwy zależności przed `COPY . ./` (`uv sync --no-install-project`, osobne `COPY` plików pnpm), `5a36d8d4` | Node 24 z obrazu `node:24-trixie-slim` zamiast `nodejs`/`npm` z Debiana, `pnpm@12` zamiast `pnpm@9` | Zmiany w różnych częściach pliku. **Ryzyko średnie:** pnpm 12 z Twoim wcześniejszym `COPY package.json pnpm-lock.yaml pnpm-workspace.yaml` + `oioioi_cypress/package.json` — `pnpm-workspace.yaml` ma teraz `allowBuilds`/`minimumReleaseAge`, innych plików konfiguracyjnych pnpm w repo nie ma, więc powinno działać, ale **obrazu nie zbudowałem** (patrz §6). Zbuduje go CI na PR. |
+| `Dockerfile` | Warstwy zależności przed `COPY . ./` (`uv sync --no-install-project`, osobne `COPY` plików pnpm), `5a36d8d4` | Node 24 z obrazu `node:24-trixie-slim` zamiast `nodejs`/`npm` z Debiana, `pnpm@12` zamiast `pnpm@9` | Zmiany w różnych częściach pliku. **Ryzyko niskie:** pnpm 12 z Twoim wcześniejszym `COPY package.json pnpm-lock.yaml pnpm-workspace.yaml` + `oioioi_cypress/package.json` — `pnpm-workspace.yaml` ma teraz `allowBuilds`/`minimumReleaseAge`, innych plików konfiguracyjnych pnpm w repo nie ma, więc powinno działać, i **build obrazu przeszedł** (patrz §6). |
 | `README.rst` | Nagłówek forka na górze | Wzmianka o `needs_linux` i macOS, usunięta lista mailingowa | Różne miejsca. Brak ryzyka. Link „full diff vs upstream” w Twoim nagłówku nadal wskazuje gałąź `czecie-camp` (przemianowaną na `main`) — nie ruszałem. |
 | `oioioi/base/admin.py` | `ModelAdmin.response_add` wraca do `came_from` | `OioioiAutocompleteJsonView` (pełne imię w podpowiedziach użytkowników), `AdminSite.autocomplete_view` | Niezależne. Brak ryzyka. |
 | `oioioi/base/templates/ingredients/menu.html` | `data-menu-key` (zapamiętywanie rozwinięcia każdej sekcji z osobna, `6acbeefb`) | `data-parent` → `data-bs-parent` | Sąsiednie linie, oba atrybuty są. **Możliwa zmiana zachowania, nie sprawdzona w przeglądarce:** stary atrybut `data-parent` był w Bootstrap 5 ignorowany, więc sekcje otwierały się niezależnie — na tym opiera się Twoje `menu-setup.js` (pamięta stan każdej sekcji). Z działającym `data-bs-parent` Bootstrap przy otwarciu jednej sekcji zwija pozostałe (akordeon). Stan nadal się zapamiętuje (zdarzenie `hidden.bs.collapse` też jest zapisywane), ale kilku sekcji naraz nie da się już trzymać otwartych klikaniem. Jeśli wolisz dotychczasowe zachowanie, wystarczy usunąć `data-bs-parent` z tego szablonu — zostawiłem wersję upstreamu, bo to jego poprawka. |
@@ -244,7 +227,7 @@ Każdy przejrzałem ręcznie po obu stronach.
 | `oioioi/problems/problem_site.py` | Zarządzanie plikami paczki jako drzewo ze zmianami wsadowymi (`PackageChangesForm`) | `_html_statement_disallowed` przy podmianie treści | Różne funkcje. Brak ryzyka. |
 | `oioioi/problems/tests/test_problem.py` | `test_search_name_without_tags` | Testy poprawek bezpieczeństwa, `needs_linux` | Niezależne. |
 | `oioioi/problems/tests/tests.py` | `@override_settings(TASK_ARCHIVE_LINK_VISIBLE=True)` | `needs_linux` | Niezależne. |
-| `oioioi/programs/handlers.py` | Częściowe rejudge (`SELECTED`, pomijanie `USER_OUTS`), `result_percentage` w `grade_tests`, usuwanie NUL | `sanitize_worker_text` dla komentarza checkera i wyjścia kompilatora | Patrz **D2**. Poza tym niezależne. |
+| `oioioi/programs/handlers.py` | Częściowe rejudge (`SELECTED`, pomijanie `USER_OUTS`), `result_percentage` w `grade_tests`, usuwanie NUL | `sanitize_worker_text` dla komentarza checkera i wyjścia kompilatora | Patrz **D2** (usuwanie NUL forka wycofane). Poza tym niezależne. |
 | `oioioi/programs/models.py` | `ContestLanguagesConfig` | `execution_mode_options` przeniesione do `contests.models.problem_instance_execution_mode_options` | Niezależne. Sprawdziłem: nic w forku nie importuje starej nazwy. |
 | `oioioi/sinolpack/tests.py` | Testy rejudge'a/plików paczki | `needs_linux`, test nazw plików dodatkowych (path traversal) | Niezależne. |
 | `oioioi/szkopul/tests.py` | Testy ukrytego linku archiwum zadań | `TestMainPageLatestContests` | Niezależne. |
@@ -334,10 +317,11 @@ Dodatkowo:
 - `manage.py check` — bez błędów.
 - Migracje na PostgreSQL 14 — patrz §5.
 
+- **Build obrazu Docker** (`docker build --target base` z czystego eksportu gałęzi): **udany**. Zmergowany
+  `Dockerfile` (Node 24 + pnpm 12 upstreamu, warstwy zależności forka) działa.
+
 **Czego nie sprawdziłem:**
 
-- **Build obrazu Docker** (`target: base`) — nie budowałem; ryzyko w `Dockerfile` opisane w §3. Zrobi to job
-  `image` w CI po otwarciu PR.
 - Testy przeglądarkowe (`smoke.yml`), kompilacja SCSS (`test_scss.py`), Cypress.
 - Ocenianie na prawdziwym workerze z sandboksami (w tym nowy domyślny kompilator — **D1**).
 - Działanie z RabbitMQ 3.8 na żywo.
@@ -345,7 +329,7 @@ Dodatkowo:
 
 ## 7. Lista kontrolna przed wdrożeniem
 
-1. Rozstrzygnąć **D1** (kompilatory) — wgrać sandbox `compiler-gcc.14_2_0` albo przypiąć stare.
+1. ~~Kompilatory (**D1**)~~ — produkcja ma własne `DEFAULT_COMPILERS`, nic do zrobienia.
 2. `grep -n "COMPILERS\|PAGINATION\|CELERY\|dj_pagination" $SIO_DATA_DIR/settings.py` — jeśli produkcyjne
    ustawienia wymieniają `dj_pagination` w `INSTALLED_APPS`/`MIDDLEWARE`, zamienić na `pagination`
    (inaczej `ModuleNotFoundError` przy starcie).
