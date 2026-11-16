@@ -478,3 +478,20 @@ Każdą sygnaturę sprawdziłem w aktualnym kodzie gałęzi; „potwierdzone” 
 - **`assert language`:** wzorcówka o rozszerzeniu, którego nie ma w `SUBMITTABLE_EXTENSIONS` (konkurs
   `kolko-ai-2026`), wywraca przypisanie zadania do rundy zamiast pokazać komunikat. Tylko admin.
 
+### 10.3 Admin wysyła zgłoszenia do zadań bez rundy (dodane na prośbę)
+
+Komentarz w `CzecieCampContestController` mówił, że do zadania bez rundy „mogą zgłaszać tylko admini”, ale w
+praktyce nie mógł nikt: formularz pokazywał „brak dostępnych zadań”, bo `can_see_problem` ukrywa takie zadania
+także przed adminem. Teraz w obozie:
+
+- admin (także basic) widzi zadanie bez rundy na liście zadań, w formularzu zgłoszenia i w API, otwiera jego
+  treść i wysyła zgłoszenia o dowolnej porze; zgłoszenie jest normalnie oceniane;
+- uczestnik nadal nie widzi takiego zadania nigdzie i nie może do niego wysłać;
+- rankingi się nie zmieniają (liczą tylko zadania z rund i tylko uczestników).
+
+Zmiany: `czeciecamp/controllers.py` (`can_see_problem`, `get_round_times` dla braku rundy) oraz trzy drobne
+poprawki w kodzie upstreamu, który zakładał rundę: sortowanie listy zadań po nazwie rundy
+(`contests/views.py`, `contests/utils.py`) i wyszukiwanie zadania w widokach treści przez `round__contest`
+(teraz `contest`). Inne typy konkursów nie pozwalają na zadania bez rundy, więc dla nich nic się nie zmienia.
+Testy: `test_integration.py::TestCampAdminSubmitsWithoutRound`.
+

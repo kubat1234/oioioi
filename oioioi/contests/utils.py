@@ -737,7 +737,7 @@ def get_problem_statements(request, controller, problem_instances):
             )
             for pi in problem_instances
         ],
-        key=lambda p: (p[2].get_key_for_comparison(), p[0].round.name, p[0].short_name),
+        key=lambda p: (p[2].get_key_for_comparison(), p[0].round.name if p[0].round else "", p[0].short_name),
     )
 
 

@@ -428,3 +428,57 @@ class TestCampProblemWithoutRound(TwoCampsTestCase):
         ):
             with self.subTest(page=name):
                 self.assertEqual(self.client.get(reverse(name, kwargs={"contest_id": "c", **kwargs})).status_code, 200)
+
+
+class TestCampAdminSubmitsWithoutRound(TwoCampsTestCase):
+    """Admins try out a problem which is not in any round yet."""
+
+    CODE = TestCampPartialRejudge.CODE
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.get(username="test_user3")
+        ContestPermission.objects.create(user=self.admin, contest=self.camp_a, permission="contests.contest_basicadmin")
+        Test.objects.filter(problem_instance=self.pi_a).update(time_limit=20000)
+        ProblemInstance.objects.filter(id=self.pi_a.id).update(round=None)
+
+    def _post(self, **extra):
+        url = reverse("submit", kwargs={"contest_id": "c"})
+        return self.client.post(url, {"problem_instance_id": self.pi_a.id, "file": ContentFile(self.CODE, name="a.c"), **extra})
+
+    def test_admin_submits_and_gets_a_result(self):
+        self.assertTrue(self.client.login(username="test_user3"))
+        for moment in (_date(0), _date(1, hour=1), _date(9)):
+            with fake_time(moment):
+                response = self._post(user="test_user3", kind="IGNORED")
+            self.assertEqual(response.status_code, 302, response.content.decode()[:3000] if response.status_code == 200 else "")
+        submissions = Submission.objects.filter(problem_instance=self.pi_a, user=self.admin)
+        self.assertEqual(submissions.count(), 3)
+        for submission in submissions:
+            self.assertEqual((submission.score, submission.status), (IntegerScore(100), "INI_OK"))
+            response = self.client.get(reverse("submission", kwargs={"contest_id": "c", "submission_id": submission.id}))
+            self.assertEqual(response.status_code, 200)
+        for name, kwargs in (
+            ("submit", {}),
+            ("my_submissions", {}),
+            ("problems_list", {}),
+            ("problem_statement", {"problem_instance": self.pi_a.short_name}),
+            ("default_ranking", {}),
+            ("contest_dashboard", {}),
+            ("czeciecamp_panel", {}),
+        ):
+            with self.subTest(page=name):
+                self.assertIn(self.client.get(reverse(name, kwargs={"contest_id": "c", **kwargs})).status_code, (200, 302))
+        self.assertContains(self.client.get("/api/c/c/problem_list/"), self.pi_a.short_name)
+        self.assertContains(self.client.get(reverse("problems_list", kwargs={"contest_id": "c"})), self.pi_a.short_name)
+
+    def test_participant_cannot(self):
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(1, hour=1)):
+            self._post()
+            self.assertFalse(self._submissions_of_users(self.pi_a).exists())
+            # Neither do they see the problem anywhere.
+            self.assertNotContains(self.client.get(reverse("problems_list", kwargs={"contest_id": "c"})), self.pi_a.short_name)
+            statement = reverse("problem_statement", kwargs={"contest_id": "c", "problem_instance": self.pi_a.short_name})
+            self.assertIn(self.client.get(statement).status_code, (403, 404))
+            self.assertNotContains(self.client.get("/api/c/c/problem_list/"), self.pi_a.short_name)
