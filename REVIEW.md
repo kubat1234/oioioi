@@ -400,3 +400,81 @@ po konkursie się zgadzają (§3), „wcześniejsze konkursy” można wybrać t
   obsługuje `update_or_create`), ale to jedyne miejsce modułu na ścieżce oceniania bez zabezpieczenia.
 - Decyzję można zapisać dla dowolnego `user_id` z adresu, także spoza konkursu (tylko admin konkursu; skutek:
   wiersz decyzji bez znaczenia).
+
+## 10. Maile o błędach z produkcji (kosz Gmaila, 17.10–12.11.2026) — czwarta tura
+
+Maile z `[III LO SIO2]` przeczytało sześciu subagentów (Sonnet: „System Error evaluating submission”, Haiku:
+błędy Django), każdy swój przedział dat, tylko do odczytu. Razem ok. 43 maile o ocenianiu i ok. 320 maili
+Django. Subagenci czytali po kilka pełnych treści na sygnaturę, resztę przypisywali po temacie, fragmencie i
+rozmiarze; druga wiadomość w wątkach dwuwiadomościowych nie była widoczna (narzędzie odmawiało `get_thread`).
+Każdą sygnaturę sprawdziłem w aktualnym kodzie gałęzi; „potwierdzone” znaczy: odtworzone sondą lub testem.
+
+### 10.1 Ocenianie i sprawdzarki
+
+| Sygnatura | Maile | Kiedy | Stan |
+|---|---|---|---|
+| `TestRunConfig.MultipleObjectsReturned` w `testrun/handlers.py::make_test` | 17 | 1.11 (14 w 44 s), 12.11 (3) | **naprawione teraz** |
+| `ValueError: A string literal cannot contain NUL` przy zapisie `TestReport` | 18 | 10.11 02:11–12:11 | naprawione wcześniej (`24d50c29` z 10.11 13:00, po merge'u `sanitize_worker_text`) |
+| `'NoneType' object has no attribute 'value'` w `sum_score_aggregator` | 3 | 1.11 21:41 | naprawione wcześniej (`6b167792` z 1.11 22:50) — patrz niżej |
+| `Module providing 'sio.compilers:python' not found` (worker) | 3 | 6.11, 9.11, 10.11 | **konfiguracja, nadal aktualne** |
+| `URLError: Temporary failure in name resolution` przy pobieraniu sandboksa kompilatora (worker 192.168.1.225) | 2 | 26.10 | środowisko |
+
+- **Test-runy (naprawione):** konfiguracja test-runu była szukana po *zadaniu* (`problem_instance__problem__id`),
+  nie po instancji. Gdy to samo zadanie ma test-runy w dwóch konkursach — a grupy obozu współdzielą zadania —
+  każdy test-run tego zadania kończył się błędem systemowym. Teraz brana jest konfiguracja instancji zgłoszenia
+  (przy okazji: właściwe limity, a nie przypadkowe z drugiego konkursu). Test:
+  `testrun/tests.py::TestHandlers::test_problem_with_test_runs_in_two_contests`. Seria z 1.11 to rejudge całego
+  zadania, który obejmuje też zgłoszenia typu TESTRUN.
+- **`None` w sumowaniu:** trzy maile z tej samej serii rejudge'a, godzinę przed poprawką częściowych rejudge'y
+  raportów „user outs” (ich testy nie mają punktów). Po poprawce z §8 zachowywane są tylko wyniki z raportów
+  INITIAL/NORMAL, więc ta droga jest zamknięta; samego maila nie da się już przypisać do zgłoszenia z pewnością.
+- **Python (do zrobienia po Twojej stronie):** sioworkers 1.5.11 (przypięte w `pyproject.toml`) nie ma żadnego
+  kompilatora Pythona — w `entry_points.txt` paczki nie ma ani `python`, ani `system-python` — a
+  `default_settings.py` oferuje język Python z kompilatorem `python`. Każde zgłoszenie w Pythonie skończy się
+  błędem systemowym (zgłoszenia #118689 i #119309). Albo wyłączyć Pythona w `SUBMITTABLE_LANGUAGES` na
+  produkcji / per konkurs, albo postawić workery z sioworkers, które go mają.
+- **Worker 192.168.1.225** (osobna instalacja, venv w `/sio2/venv`): nie miał sandboksa `compiler-gcc4_8_2` i
+  próbował go pobrać w trakcie oceniania bez działającego DNS. Warto wgrać sandboksy z góry
+  (`sio-get-sandbox`) i sprawdzić, dlaczego konkurs używał gcc 4.8.2.
+- **Czego w mailach nie było:** błędów sio2jail, sprawdzaczek (checkerów), Filetrackera, znikających workerów,
+  timeoutów. Jedyny ślad „dziwnego wyjścia” to bajty NUL w komentarzu sprawdzaczki.
+
+### 10.2 Strona WWW (od najczęstszych)
+
+| Sygnatura | Maile | Stan |
+|---|---|---|
+| `TypeError: Plural value must be an integer, got dict` (`scoresreveal`), 9.11 13:00–13:11 | 120 | naprawione wcześniej (`21e929d8`, 9.11) |
+| `IndexError` w `get_suable_usernames` — wyszukiwanie użytkownika samymi spacjami, 29.10 | 96 | **naprawione teraz** |
+| `IntegrityError` duplikat `RiskAssessment` na panelu `llmdetect`, 10.11 | 20 | naprawione wcześniej (zapis z `update_conflicts`) |
+| `KeyError: None` w API `problem_list` (zadanie bez rundy w starych konkursach), 9.11 | 18 | nie odtwarza się na gałęzi (lista zadań API pomija zadania bez rundy) |
+| `SuspiciousOperation` na stronie zgłoszenia otwartej z adresu innego konkursu | 10 | celowa odmowa; mail zamiast cichego 400 |
+| `ConnectionRefusedError` — `sioworkersd` nie działał (21–24.10, 9.11) | 10 | środowisko |
+| `Fault 8001: procedure forget_worker not found` — przycisk „zapomnij workera” | 8 | sioworkers 1.5.11 nie ma tego RPC; przycisk nie działa |
+| `ProgrammingError: column …excluded_rounds does not exist` (9.11 15:34) i brak tabeli `disqualification_…` (17.10) | 7 + 4 | wdrożenie kodu przed migracją; `deploy.sh` robi to teraz w dobrej kolejności |
+| `AttributeError` na stronie monitoringu — zadanie bez rundy, 2.11 | 6 | **naprawione teraz** |
+| `ValueError: invalid literal for int(): '00000000000000000-1'` na stronie zgłoszenia #106559 | 6 | dane, patrz niżej |
+| `AttributeError: 'NoneType' … 'id'` przy rejudge'u zadania bez rundy, 4.11 | 2 | **naprawione teraz** |
+| `IntegrityError` / deadlock na `evalmgr_savedenviron` przy zapisie instancji zadania w adminie, 10.11 02:23–02:45 | 4 | wyścig, opisany niżej |
+| `AssertionError` (`assert language`) przy przypisaniu zadania do rundy, 6.11 | 2 | opisane niżej |
+| `DataError: value too long for character varying(255)` w `problemset/add_or_update`, 29.10 | 2 | nieprzeczytane (treść 302 KB) |
+| `DisallowedHost` z sieci lokalnej (sonda `curl` na :8000), 17.10 | 5 | szum |
+
+- **Zadania bez rundy (naprawione, commit osobny):** obóz na nie pozwala, a usunięcie rundy w panelu zostawia jej
+  zadania i zgłoszenia bez rundy. Potwierdzone sondą: rejudge takiego zgłoszenia (pojedynczy i całego zadania)
+  dawał 500, a po usunięciu pierwszej przeszkody ocenianie i tak kończyło się błędem systemowym, bo
+  `update_user_results` zakładał, że zadanie w konkursie ma rundę; strona monitoringu dawała 500. Teraz:
+  `round_id` trafia do środowiska oceniania tylko, gdy runda istnieje; obóz liczy wynik zadania i konkursu bez
+  wyniku rundy; monitoring grupuje takie zadania osobno. Testy: `test_integration.py::TestCampProblemWithoutRound`
+  (rejudge z prawdziwym ocenianiem, sześć stron kadry).
+- **Wynik `-1` zapisany jako `00000000000000000-1`:** jeden raport testu w konkursie `zaawansowana-06zakopane2026`
+  ma punktację w formacie, którego dzisiejszy kod nie zapisuje (`f"{-1:019d}"` daje `-000000000000000001`) — to
+  pozostałość starszej wersji albo importu. Strona tego zgłoszenia daje 500 każdemu, kto ją otworzy. Naprawa to
+  poprawienie jednego wiersza w bazie (`programs_testreport` zgłoszenia #106559); skrypty migracji w
+  `sio-migration/` punktów nie zapisują, więc źródła nie ustaliłem.
+- **Wyścig przy zapisie instancji zadania:** zapis w adminie odtwarza zgłoszenia wzorcowe (kasuje stare razem
+  z ich zadaniami w kolejce), a `evalmgr` w tym samym czasie zapisuje środowisko jednego z nich. Dwa szybkie
+  zapisy pod rząd w nocy 10.11 dały raz naruszenie klucza obcego, raz deadlock. Skutek: 500 dla admina,
+  powtórzenie działa. Kod upstreamu; nie ruszałem.
+- **`assert language`:** wzorcówka o rozszerzeniu, którego nie ma w `SUBMITTABLE_EXTENSIONS` (konkurs
+  `kolko-ai-2026`), wywraca przypisanie zadania do rundy zamiast pokazać komunikat. Tylko admin.
+
