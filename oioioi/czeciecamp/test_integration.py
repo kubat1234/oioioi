@@ -15,6 +15,7 @@ from oioioi.contests.models import Contest, ContestPermission, ProblemInstance, 
 from oioioi.contests.scores import IntegerScore
 from oioioi.czeciecamp.models import CampRanking, create_round_ranking, get_camp_config
 from oioioi.participants.models import Participant
+from oioioi.programs.models import Test, TestReport
 
 CONTROLLER = "oioioi.czeciecamp.controllers.CzecieCampContestController"
 T0 = datetime(2020, 8, 1, 9, 0, tzinfo=UTC)
@@ -302,3 +303,81 @@ class TestCampTimeExtension(TwoCampsTestCase):
         with fake_time(_date(1, hour=5, minute=20)):
             _response, judged = self._submit(self.camp_a, self.pi_a)
         self.assertEqual(judged, 1)
+
+
+class TestCampPartialRejudge(TwoCampsTestCase):
+    """A rejudge of a whole problem on new or selected tests, through the
+    admin's form, with real judging: what it does to the submission, to the
+    ranking and to the rejudge report.
+    """
+
+    CODE = b'#include <stdio.h>\nint main() { int a, b; scanf("%d %d", &a, &b); printf("%d\\n", a + b); return 0; }\n'
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.get(username="test_user3")
+        ContestPermission.objects.create(user=self.admin, contest=self.camp_a, permission="contests.contest_admin")
+        # A camp gives fewer points for slow runs; keep the timing of a loaded machine out of the test.
+        Test.objects.filter(problem_instance=self.pi_a).update(time_limit=20000)
+        self.ranking = CampRanking.objects.get(contest=self.camp_a, name="Stałe", round=None)
+
+    def _points(self):
+        data = self.camp_a.controller.ranking_controller().serialize_ranking(f"admin#{self.ranking.id}#test")
+        return next(row["sum"] for row in data["rows"] if row["user"] == self.user_a)
+
+    def _rejudge(self, **data):
+        self.assertTrue(self.client.login(username="test_user3"))
+        url = reverse("rejudge_all_submissions_for_problem", kwargs={"contest_id": "c", "problem_instance_id": self.pi_a.id})
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 302)
+        report_url = reverse("czeciecamp_rejudge_report", kwargs={"contest_id": "c", "problem_instance_id": self.pi_a.id})
+        return self.client.get(report_url)
+
+    def _tests_of(self, submission):
+        reports = TestReport.objects.filter(submission_report__submission=submission, submission_report__status="ACTIVE", submission_report__kind="NORMAL")
+        return {report.test_name: report for report in reports}
+
+    def test_new_tests_then_selected_tests(self):
+        hidden = Test.objects.get(problem_instance=self.pi_a, name="2")
+        hidden.is_active = False
+        hidden.save()
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(1, hour=1)):
+            url = reverse("submit", kwargs={"contest_id": "c"})
+            self.client.post(url, {"problem_instance_id": self.pi_a.id, "file": ContentFile(self.CODE, name="a.c")})
+        submission = self._submissions_of_users(self.pi_a).get()
+        self.assertEqual(submission.score, IntegerScore(67))
+        self.assertEqual(self._points(), 67)
+        before = self._tests_of(submission)
+        self.assertNotIn("2", before)
+
+        # The test comes back; only it is judged, the others keep their results.
+        hidden.is_active = True
+        hidden.save()
+        response = self._rejudge(rejudge_type="NEW")
+        submission.refresh_from_db()
+        after = self._tests_of(submission)
+        self.assertEqual(submission.score, IntegerScore(100))
+        self.assertEqual(self._points(), 100)
+        self.assertEqual(set(after), {*before, "2"})
+        for name, report in before.items():
+            self.assertEqual((after[name].status, after[name].score, after[name].time_used), (report.status, report.score, report.time_used))
+        self.assertContains(response, "67 → 100")
+        self.assertContains(response, "Stałe")
+
+        # Selected tests of an unchanged submission: judged again, nothing changes.
+        response = self._rejudge(rejudge_type="SELECTED", tests=["1a", "2"])
+        submission.refresh_from_db()
+        self.assertEqual(submission.score, IntegerScore(100))
+        self.assertEqual(self._points(), 100)
+        self.assertContains(response, "The rejudge has not changed anything.")
+        self.assertEqual(set(self._tests_of(submission)), set(after))
+
+    def test_selected_tests_must_be_chosen_and_belong_to_the_problem(self):
+        self.assertTrue(self.client.login(username="test_user3"))
+        url = reverse("rejudge_all_submissions_for_problem", kwargs={"contest_id": "c", "problem_instance_id": self.pi_a.id})
+        with patch(JUDGE) as judge:
+            for tests in ([], ["no-such-test"]):
+                response = self.client.post(url, {"rejudge_type": "SELECTED", "tests": tests})
+                self.assertEqual(response.status_code, 200)
+            self.assertEqual(judge.call_count, 0)

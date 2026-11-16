@@ -4,6 +4,8 @@ Zakres: zmiany forka względem upstreamu, potem ścieżki używane na obozie (zg
 uprawnienia, wiele grup, pliki paczek). Każdą hipotezę z lektury sprawdzałem testem lub sondą, zanim trafiła
 tutaj — trzy pierwotne podejrzenia okazały się fałszywe i są wymienione na końcu, żeby nikt ich nie powtarzał.
 
+**Trzecia tura: częściowy rejudge (§8, dwa błędy naprawione) i `llmdetect` (§9, bez poważnych błędów w ocenie, trzy uwagi).**
+
 **Druga tura (ten sam dzień): audyt autoryzacji wokół rejudge'a i testy własnościowe rankingów — §6 i §7.**
 Naprawione dodatkowo 2.1 (`suspendjudge` między grupami) i walidacja typu rejudge'a; nowe 2.5 i 2.6.
 
@@ -281,3 +283,120 @@ matematyka rankingów zgadza się z regułami we wszystkich wylosowanych obozach
 **Czego nie obejmują:** `RoundTimeExtension` (2.2 — generator nie tworzy przedłużeń, więc test tego nie
 pokaże), renderowanie HTML rankingu, unieważnianie cache'u rankingów, `llmdetect`, rankingi innych typów
 konkursów (poza wspólnym `_assign_places`).
+
+## 8. Częściowy rejudge („na nowych testach” / „na wybranych testach”) — trzecia tura
+
+Przeczytana cała ścieżka `collect_tests → run_tests → run_tests_end → grade_tests → grade_groups →
+make_report` (`oioioi/programs/handlers.py`) i raport rejudge'a obozu (`czeciecamp/rejudge_report.py`);
+hipotezy sprawdzane prawdziwym ocenianiem (testy w `programs/tests.py` uruchamiają lokalnego workera).
+
+### 8.1 Naprawione (commit `programs: a partial rejudge keeps comments and limits, …`)
+
+- **[ŚREDNIE] Po zmianie punktów testów częściowy rejudge kończył zgłoszenia błędem systemowym.**
+  Zachowany wynik testu niesie punkty, które test był wart wtedy. Jeśli w grupie zmieniono `max_score`
+  (ręcznie albo nową paczką), a potem puszczono rejudge „NEW” lub „SELECTED”, w jednej grupie spotykały się
+  testy o różnej wartości, `min_group_scorer` rzucał `UnequalMaxScores`, zgłoszenie dostawało raport FAILURE
+  i **wynik `None`** — czyli znikało z rankingów obozu (te liczą tylko zgłoszenia z wynikiem) do czasu pełnego
+  rejudge'a. Potwierdzone sondą. Teraz test, którego wartość się zmieniła, jest po prostu oceniany ponownie.
+- **[NISKIE] Zachowane testy traciły komentarz sprawdzaczki** („wiersz 3: wczytano…”) — nowy raport miał dla
+  nich pusty komentarz — **i pokazywały dzisiejsze limity** obok czasu zmierzonego przy starych (po podniesieniu
+  limitu stary TLE wyglądał jak „1,9 s / 5 s, przekroczony limit”). Jedno i drugie jest teraz przepisywane ze
+  starego raportu.
+- **Porządek:** zachowane wyniki są czytane tylko z raportów, które rejudge zastępuje (INITIAL/NORMAL),
+  zamiast z każdego aktywnego raportu zgłoszenia; `TestReport.objects.get(...)` nie może już trafić na dwa
+  raporty tego samego testu.
+
+### 8.2 Sprawdzone, bez zastrzeżeń
+
+- Rejudge dowolnego podzbioru testów niezmienionego zgłoszenia nie zmienia niczego: te same wyniki testów,
+  grup, raportów i zgłoszenia (nowy test własnościowy, losowe podzbiory + „NEW” bez nowych testów).
+- „NEW” bez żadnego nowego testu (pusta lista zadań dla workera) działa.
+- Po rejudge'u „widocznym tylko dla adminów” (raport HIDDEN) częściowy rejudge działa — raport HIDDEN zostaje
+  nieaktywny, więc nie dubluje testów (to była moja hipoteza błędu; nie potwierdziła się, test został).
+- Zgłoszenie bez wyników do zachowania (błąd kompilacji, błąd systemowy, raport „user outs”) dostaje pełny
+  rejudge — pokryte istniejącymi testami.
+- Formularz: „wybrane testy” tylko dla jednego zadania, wymagany co najmniej jeden test, nazwy spoza zadania
+  odrzucane (nowy test przez HTTP); flaga „wymaga rejudge'a” gaśnie tylko po pełnym rejudge'u wszystkich
+  zgłoszeń.
+- Raport rejudge'a obozu przy częściowym rejudge'u: porównuje ostatni raport sprzed startu z bieżącym wynikiem,
+  więc typ rejudge'a nie ma dla niego znaczenia. Nowy test end-to-end
+  (`test_integration.py::TestCampPartialRejudge`): prawdziwe zgłoszenie 67 pkt → reaktywowany test → „NEW” →
+  100 pkt, ranking Stałe 67 → 100, raport pokazuje „67 → 100”; potem „SELECTED” → „nic się nie zmieniło”.
+
+### 8.3 Do wiedzy (zachowanie, nie błąd)
+
+- „NEW” rozpoznaje testy **po nazwie**. Jeśli nowa paczka zmienia *treść* testu pod starą nazwą (albo limity),
+  „NEW” go nie ruszy — potrzebny „SELECTED” z tym testem albo pełny rejudge. Po poprawce 8.1 wyjątkiem jest
+  zmiana punktów, która wymusza ponowną ocenę.
+- „SELECTED” zostawia zgłoszeniu także wyniki testów, które są już nieaktywne (dopóki istnieją w zadaniu), a
+  nie dodaje aktywnych testów, których zgłoszenie nie miało. Po dodaniu testów do grupy sam „SELECTED” innego
+  testu zostawia więc grupę ocenioną na niepełnym zestawie — do wyrównania służy „NEW”.
+- Raport rejudge'a zapisuje się tylko przy rejudge'u całego zadania (`rejudge_all`), nie przy akcji „rejudge
+  wybranych zgłoszeń” ani przy rejudge'u pojedynczego zgłoszenia. Zgłoszenie, którego zadanie oceniania padnie
+  bez żadnego raportu, zostawia raport w stanie „w toku” na stałe.
+- Dwa rejudge'e tego samego zgłoszenia naraz (np. pełny i zaraz „NEW”): drugi czyta zachowane wyniki z
+  raportu aktywnego w chwili oceniania grup; jeśli pierwszy w tym czasie skończy się błędem systemowym, drugi
+  też się wywróci. Wąskie okno, naprawia je powtórzenie rejudge'a.
+
+## 9. `llmdetect` — trzecia tura (szukanie poważniejszych błędów)
+
+**Zakres:** `controllers.py`, `middleware.py`, `models.py`, `views.py`, `forms.py`, polecenie
+`llmdetect_purge`, orkiestracja w `scoring.py` (`ContestAssessor`: blokady, zapis, flaga `dirty`).
+Wnętrza sygnałów (wagi, cechy stylu, nawyki) czytałem tylko tam, gdzie dotykają dat rund i użytkowników —
+ich trafności nie oceniam.
+
+**Jak sprawdzałem:**
+
+- *Fuzz analizatora* (`analyze_source`, `extract_habits`, `extract_code`) na 33 złośliwych wejściach po
+  100 KB (same spacje, `/*` bez końca, cudzysłowy, ukośniki, NUL-e, jedna linia 100 KB…), jako C++ i Python:
+  żadne nie trwało dłużej niż 0,7 s i żadne nie rzuciło wyjątku. To ważne, bo kod wklejony w formularzu jest
+  analizowany w żądaniu wysłania zgłoszenia.
+- *Nowe testy własnościowe* (`oioioi/llmdetect/test_properties.py`, 4 testy × 20 losowych konkursów): puste,
+  binarne i ogromne źródła, pliki zgubione ze storage'u, zadania bez rundy, rundy bez końca, zgłoszenia bez
+  wyniku, jeden uczestnik, wszyscy z tym samym kodem, wcześniejsze konkursy, referencje, decyzje. Własności:
+  ocena nigdy się nie wywraca; ryzyko jest w [0, 1] i wszystkie liczby są skończone; oceniane są wyłącznie
+  zgłoszenia uczestników tego konkursu; dwa przebiegi dają identyczny wynik; panel, strona uczestnika, każde
+  zgłoszenie i porównanie z cudzym kodem otwierają się (200); bez wybranych „wcześniejszych konkursów” inne
+  konkursy na instancji nie zmieniają wyniku.
+- *Pomiar:* syntetyczny konkurs 40 uczestników × 24 zadania × 4 zgłoszenia (3840 zgłoszeń, 20 referencji na
+  zadanie): przeliczenie 6 s; pierwsze przeliczenie, gdy cechy nie są jeszcze policzone, 32 s.
+
+**Wynik: nie znalazłem błędu, który psułby ocenianie, wysyłanie zgłoszeń albo wyniki.** Haki na ścieżce
+oceniania łapią własne wyjątki, blokada wiersza konfiguracji jest trzymana krótko, uprawnienia i filtrowanie
+po konkursie się zgadzają (§3), „wcześniejsze konkursy” można wybrać tylko spośród administrowanych.
+
+**Uwagi (od najważniejszej):**
+
+### 9.1 Pierwsze otwarcie panelu po zmianie wersji cech liczy wszystko w żądaniu WWW
+
+- **Gdzie:** `views.py::panel_view` / `user_view` → `update_if_needed` → `ensure_features`.
+- **Kiedy:** po wdrożeniu, które podbija `FEATURES_VERSION`, po `llmdetect_purge` albo po włączeniu modułu
+  w trakcie obozu — cechy wszystkich zgłoszeń są liczone od nowa przy pierwszym otwarciu panelu (wyżej: 32 s
+  na 3840 zgłoszeń; rośnie liniowo). Obliczenie celowo nie ma blokady, więc każde odświeżenie strony przez
+  niecierpliwego opiekuna zajmuje kolejny z 10 procesów uwsgi na tyle samo czasu; uwsgi nie ma `harakiri`,
+  więc proces liczy do końca nawet po zerwaniu połączenia. Kilka odświeżeń w trakcie rundy może na kilkadziesiąt
+  sekund zabrać większość procesów obsługujących uczestników.
+- **Propozycja:** dopisać `llmdetect_update <konkursy>` do `deploy.sh` po migracjach (SETUP.md już to zaleca
+  ręcznie), a w panelu przy brakujących cechach pokazać „trwa analiza” zamiast liczyć w żądaniu. Nie
+  zmieniałem — to decyzja o zachowaniu panelu.
+
+### 9.2 `llmdetect_purge` nie usuwa wszystkiego, co obiecuje, a panel potrafi to odtworzyć
+
+- **Odtworzenie:** polecenie ustawia `dirty=True`; pierwsze otwarcie panelu tego konkursu po „wyczyszczeniu”
+  analizuje wszystkie zgłoszenia od nowa i zapisuje `SubmissionFeatures` i `RiskAssessment` z powrotem.
+- **Zostają dane uczestników:** referencje typu „potwierdzony przypadek” (`LLMReferenceSolution` z kodem
+  zgłoszenia uczestnika i kluczem do zgłoszenia) nie są kasowane; „zanonimizowane” decyzje zachowują `signals`,
+  a sygnał podobieństwa ma w szczegółach identyfikator użytkownika i zgłoszenia *innego* uczestnika
+  (`scoring.py:529`).
+- **Propozycja:** w purge usuwać referencje `KIND_CONFIRMED`, czyścić z `signals` klucze `user`/`submission`
+  i oznaczać konkurs jako zamknięty dla analizy (pole w konfiguracji sprawdzane w `update_if_needed`).
+
+### 9.3 Drobne
+
+- Licznik „nie udało się odczytać N zgłoszeń” na panelu obejmuje też zgłoszenia z wcześniejszych konkursów,
+  a plik zgubiony ze storage'u jest próbowany od nowa przy każdym przeliczeniu.
+- `mark_dirty` w `submission_judged` (gałąź rejudge'a) nie jest w `try` jak reszta haka: błąd bazy w tym
+  miejscu przerwałby zadanie oceniania. Nie umiem wskazać realnego scenariusza (wyścig przy tworzeniu wiersza
+  obsługuje `update_or_create`), ale to jedyne miejsce modułu na ścieżce oceniania bez zabezpieczenia.
+- Decyzję można zapisać dla dowolnego `user_id` z adresu, także spoza konkursu (tylko admin konkursu; skutek:
+  wiersz decyzji bez znaczenia).
