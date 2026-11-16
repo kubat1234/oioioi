@@ -644,8 +644,7 @@ def make_report(env, kind="NORMAL", save_scores=True, **kwargs):
             test_report.result_percentage_numerator = percentage.numerator
             test_report.result_percentage_denominator = percentage.denominator
 
-        # PostgreSQL rejects NUL in text columns; checkers may emit it (e.g. when escaping bad output).
-        comment = result.get("result_string", "").replace("\x00", "")
+        comment = result.get("result_string", "")
         if comment.lower() in ["ok", "time limit exceeded"]:  # Annoying
             comment = ""
         test_report.comment = sanitize_worker_text(comment, max_comment_length)

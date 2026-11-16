@@ -333,7 +333,7 @@ class TestHandlers(TestCase):
             environ["test_results"]["test"]["result_string"] = 'WRONG: got "<0x\x005>"'
             graded_environ = handlers.make_report(handlers.grade_submission(environ))
             report = TestRunReport.objects.get(submission_report=graded_environ["report_id"])
-            self.assertEqual('WRONG: got "<0x5>"', report.comment)
+            self.assertEqual('WRONG: got "<0x\ufffd5>"', report.comment)
 
             handlers.delete_output(graded_environ)
         except Exception:

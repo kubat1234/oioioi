@@ -1109,9 +1109,7 @@ class TestMakeReportSanitizesWorkerText(TestCase):
     def test_checker_comment(self):
         env = make_report(self._make_env("OK", ""))
         report = TestReport.objects.get(submission_report_id=env["report_id"])
-        # Fork: make_report strips NUL from checker comments before upstream's
-        # sanitize_worker_text gets to replace it (see MERGE_REPORT.md).
-        self.assertEqual(report.comment, "badoutput\ufffd")
+        self.assertEqual(report.comment, "bad\ufffdoutput\ufffd")
 
     def test_compiler_output(self):
         env = make_report(self._make_env("CE", "a.cpp:1:1: error: 'x\x00y'"))
@@ -2802,4 +2800,4 @@ class TestMakeReport(TestCase):
         )
         env = make_report(env)
         report = TestReport.objects.get(id=env["test_results"]["0"]["report_id"])
-        self.assertEqual('ŹLE: oczekiwano "abc", otrzymano "<0x5><0x6>"', report.comment)
+        self.assertEqual('ŹLE: oczekiwano "abc", otrzymano "<0x\ufffd5><0x\ufffd6>"', report.comment)
