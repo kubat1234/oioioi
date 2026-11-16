@@ -1,5 +1,6 @@
 import functools
 import os
+import random
 import re
 import urllib
 from collections import defaultdict
@@ -49,6 +50,7 @@ from oioioi.programs.models import (
     CheckerFormatForProblem,
     CompilationReport,
     ContestLanguagesConfig,
+    GroupReport,
     LanguageOverrideForTest,
     ModelSolution,
     ProblemAllowedLanguage,
@@ -1762,6 +1764,84 @@ class TestRejudge(TestCase, SubmitFileMixin):
             ["0", "1b", "3"],
             ["1a", "2"],
         )
+
+    def _judged_submission(self):
+        self.assertTrue(self.client.login(username="test_user"))
+        contest = Contest.objects.get()
+        pi = ProblemInstance.objects.get(id=1)
+        self.submit_code(contest, pi, "int main(void) { return 0; }")
+        submission = ProgramSubmission.objects.all().latest("id")
+        self.assertEqual(submission.score, IntegerScore(100))
+        return submission
+
+    def _rejudge(self, submission, rejudge_type, tests=(), **extra_args):
+        submission.problem_instance.controller.judge(
+            submission, is_rejudge=True, extra_args={"tests_to_judge": list(tests), "rejudge_type": rejudge_type, **extra_args}
+        )
+        submission.refresh_from_db()
+        return {report.test_name: report for report in TestReport.objects.filter(submission_report__submission=submission, submission_report__status="ACTIVE")}
+
+    def test_partial_rejudge_after_hidden_judge(self):
+        """A rejudge visible only for admins leaves one more report with the same tests."""
+        submission = self._judged_submission()
+        submission.problem_instance.controller.judge(submission, is_rejudge=True, extra_args={"hidden_judge": True})
+        self.assertTrue(SubmissionReport.objects.filter(submission=submission, kind="HIDDEN").exists())
+        for rejudge_type, tests in (("NEW", []), ("SELECTED", ["1a"])):
+            with self.subTest(rejudge_type=rejudge_type):
+                self._rejudge(submission, rejudge_type, tests)
+                self.assertEqual(submission.score, IntegerScore(100))
+                self.assertFalse(SubmissionReport.objects.filter(submission=submission, kind="FAILURE").exists())
+
+    def test_partial_rejudge_judges_tests_with_changed_max_score(self):
+        """A kept result is worth the points its test had before; mixed with
+        tests judged now, a group would have tests of different worth.
+        """
+        submission = self._judged_submission()
+        Test.objects.filter(problem_instance_id=1, group="1", kind="NORMAL").update(max_score=50)
+        for rejudge_type, tests in (("SELECTED", ["2"]), ("NEW", [])):
+            with self.subTest(rejudge_type=rejudge_type):
+                reports = self._rejudge(submission, rejudge_type, tests)
+                self.assertFalse(SubmissionReport.objects.filter(submission=submission, kind="FAILURE").exists())
+                self.assertEqual([reports[name].max_score for name in ("1a", "1b")], [IntegerScore(50), IntegerScore(50)])
+                self.assertEqual(submission.score, IntegerScore(50 + 33 + 34))
+
+    def test_partial_rejudge_of_unchanged_submission_changes_nothing(self):
+        """Whatever tests are chosen: the same code on the same tests gives the same report."""
+
+        def results(submission):
+            reports = SubmissionReport.objects.filter(submission=submission, status="ACTIVE")
+            tests = TestReport.objects.filter(submission_report__in=reports)
+            groups = GroupReport.objects.filter(submission_report__in=reports)
+            return (
+                sorted((t.submission_report.kind, t.test_name, t.test_group, t.status, t.score, t.max_score, t.test_time_limit) for t in tests),
+                sorted((g.submission_report.kind, g.group, g.status, g.score, g.max_score) for g in groups),
+                sorted((r.kind, r.score_report.status, r.score_report.score, r.score_report.max_score) for r in reports),
+                (submission.score, submission.status),
+            )
+
+        submission = self._judged_submission()
+        before = results(submission)
+        names = ["0", "1a", "1b", "1ocen", "2", "3"]
+        rng = random.Random(1)
+        for chosen in (["1a"], ["0"], names, rng.sample(names, 3), rng.sample(names, 4)):
+            with self.subTest(chosen=chosen):
+                self._rejudge(submission, "SELECTED", chosen)
+                self.assertEqual(results(submission), before)
+        self._rejudge(submission, "NEW")
+        self.assertEqual(results(submission), before)
+
+    def test_kept_results_keep_their_comment_and_limits(self):
+        submission = self._judged_submission()
+        kept = TestReport.objects.get(submission_report__submission=submission, submission_report__status="ACTIVE", test_name="1b")
+        kept.comment = "wiersz 1: wczytano 3, oczekiwano 4"
+        kept.test_time_limit = 777
+        kept.test_mem_limit = 4321
+        kept.save()
+        reports = self._rejudge(submission, "SELECTED", ["1a"])
+        self.assertNotEqual(reports["1b"].id, kept.id)
+        self.assertEqual((reports["1b"].comment, reports["1b"].test_time_limit, reports["1b"].test_mem_limit), (kept.comment, 777, 4321))
+        # The judged test shows the limits it has now.
+        self.assertEqual(reports["1a"].test_time_limit, Test.objects.get(problem_instance_id=1, name="1a").time_limit)
 
 
 class TestLimitsLimits(TestCase):
