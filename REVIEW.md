@@ -36,6 +36,30 @@ forka, importu paczek od strony `sinolpack` (fork go nie zmienia), oceniania na 
   anonim, uczestnik, admin konkursu, admin innego konkursu, GET).
 - **Do zrobienia przez Ciebie:** warto zgłosić to upstreamowi (prywatnie, jako błąd bezpieczeństwa) — nie
   zgłaszałem niczego na zewnątrz.
+- **Czy są bliźniacze dziury (sprawdzone 2026-11-16):** przejrzane wszystkie `get_urls` w
+  `oioioi/*/admin.py`. To jedyny endpoint adminowy bez żadnej kontroli. `globalmessage` opakowuje
+  `admin_site.admin_view`; `problems` `download_view` jest surowy, ale sam robi `has_change_permission`;
+  `suspendjudge` (resume/suspend) ma `enforce_condition(contest_exists & is_contest_basicadmin)` — nie jest
+  obejściem logowania, ma tylko problem braku sprawdzenia konkursu (§2.1). Aplikacje forka (`czeciecamp`,
+  `llmdetect`, `problembase`) nie mają własnego `get_urls`; ich widoki idą przez `urls.py` z
+  `enforce_condition`/`is_superuser`.
+- **Co to umożliwia / klasa błędu:** brak autoryzacji na operacji zmieniającej stan.
+  - **Dostępność (wysoki wpływ, główny):** `submissions` to lista dowolnych id, bez limitu liczby i bez
+    filtrowania po konkursie (`Submission.objects.in_bulk(ids)`). Jedno żądanie kolejkuje tyle jobów
+    oceniania, ile poda atakujący — w praktyce wszystkie zgłoszenia na instancji — i można to powtarzać.
+    W trakcie rundy zapcha to kolejkę `evalmgr`/sioworkers i zablokuje sprawdzanie zgłoszeń uczestników.
+    Anonimowo, trywialne do zeskryptowania.
+  - **Integralność (nisko-średni):** rejudge przelicza wynik z aktualnych testów; `FULL` na niezmienionych
+    testach daje ten sam wynik, `NEW`/`SELECTED` z pustym wyborem nic nie sprawdza i zachowuje stare wyniki,
+    a crafted `tests` nie zeruje już ocenionych testów w raporcie (prześledzone w `programs/handlers.py::collect_tests`).
+    Jedyne realne okno: gdyby admin zmienił/dodał testy i jeszcze nie zrobił rejudge'a, atakujący wymusiłby
+    je wcześniej. Poza tym churn statusów („oczekuje") i powtarzane unieważnianie rankingów.
+  - **Poufność: brak.** Endpoint tylko przekierowuje (`302`), nie zwraca danych zgłoszeń; komunikat „Queued N"
+    trafia do sesji, a anonima redirect odsyła do logowania. Nie jest kanałem do czytania cudzego kodu ani
+    wyników; cross-contest dotyczy wyzwalania rejudge'a, nie podglądania.
+  - **CSRF to nie bariera bezpieczeństwa:** blokuje tylko żądanie bez tokenu; każdy wylogowany bierze token
+    z formularza dowolnej strony i przechodzi. Potwierdzone ręcznie na produkcji (serwer ma `CSRF_USE_SESSIONS`,
+    token jest w sesji, nie w ciasteczku).
 
 ## 2. Opisane, nienaprawione (od najpoważniejszych)
 
