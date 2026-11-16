@@ -241,7 +241,6 @@ gives the authoritative one):
 | Problems without a round | Allowed when the controller says so | `contests/forms.py`, `problems/processors.py` |
 | Rankings | Invalidated when a participant is added/removed | `participants/models.py`, `participants/admin.py` |
 | UI | Side menu remembers open sections; unread-messages badge refreshes itself; webpack bundles get `?v=<mtime>` (`bundle_static`); `TASK_ARCHIVE_LINK_VISIBLE` (default off) | `base/static/js/menu-setup.js`, `questions/…/navbar_messages.js`, `base/templatetags/simple_tags.py`, `base/navbar_links.py` |
-| Judging | NUL stripped from checker comments | `programs/handlers.py`, `testrun/handlers.py` |
 | Translations | Polish strings for fork changes in upstream apps | `oioioi/_locale/locale-overrides/pl/` (fork apps carry their own `locale/`) |
 | Infra | Production compose, `deploy.sh`, `.env.example`, fork CI and Release workflows, Dockerfile layer order | repo root, `.github/workflows/` |
 
