@@ -101,7 +101,8 @@ def update_user_results(env, **kwargs):
             assert contest.id == env["contest_id"]
         else:
             assert "round_id" not in env
-            assert "contest_id" not in env
+            # Some contest types allow problems without a round.
+            assert env.get("contest_id") == problem_instance.contest_id
 
     problem_instance.controller.update_user_results(user, problem_instance)
 

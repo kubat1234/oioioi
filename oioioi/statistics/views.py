@@ -217,6 +217,11 @@ def get_permissions_info(request):
     return permissions_info
 
 
+def _round_name(problem_instance):
+    # Some contest types allow problems without a round; the limits above are grouped under None for them.
+    return problem_instance.round.name if problem_instance.round is not None else None
+
+
 def get_tests_info(request):
     tests_info = defaultdict(
         lambda: defaultdict(
@@ -251,7 +256,7 @@ def get_tests_info(request):
 
     testrunconfig_qs = TestRunConfig.objects.filter(problem_instance__contest=request.contest)
     for trc in testrunconfig_qs:
-        tests_info[trc.problem_instance.round.name][trc.problem_instance.id]["testrun_config"] = trc
+        tests_info[_round_name(trc.problem_instance)][trc.problem_instance.id]["testrun_config"] = trc
 
     solved_qs = ScoreReport.objects.filter(
         submission_report__submission__problem_instance__contest=request.contest,
@@ -261,7 +266,8 @@ def get_tests_info(request):
     )
 
     for s in solved_qs:
-        tests_info[s.submission_report.submission.problem_instance.round.name][s.submission_report.submission.problem_instance.id]["solved"] = True
+        problem_instance = s.submission_report.submission.problem_instance
+        tests_info[_round_name(problem_instance)][problem_instance.id]["solved"] = True
 
     tests_info = {r: dict(t) for r, t in tests_info.items()}
 

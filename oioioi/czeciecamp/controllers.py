@@ -11,7 +11,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.contests.controllers import get_score_badge_class
-from oioioi.contests.models import ProblemInstance, Submission, SubmissionReport
+from oioioi.contests.models import ProblemInstance, Submission, SubmissionReport, UserResultForContest
 from oioioi.contests.utils import has_any_active_round, is_contest_basicadmin, is_contest_observer
 from oioioi.czeciecamp.models import (
     DAILY_NAME,
@@ -165,6 +165,16 @@ class CzecieCampContestController(ProgrammingContestController):
         result.score = best.score
         result.status = best.status
         result.submission_report = SubmissionReport.objects.filter(submission=best, status="ACTIVE", kind="NORMAL").first()
+
+    def update_user_results(self, user, problem_instance):
+        if problem_instance.round is not None:
+            return super().update_user_results(user, problem_instance)
+        # A problem without a round (allow_problems_without_round) has no result of a round.
+        problem_instance.problem.controller.update_user_results(user, problem_instance)
+        with transaction.atomic():
+            result, _created = UserResultForContest.objects.select_for_update().get_or_create(user=user, contest=self.contest)
+            self.update_user_result_for_contest(result)
+            result.save()
 
     def show_last_submission_status(self, request):
         # The problems list of a camp shows only the score.

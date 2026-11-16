@@ -381,3 +381,50 @@ class TestCampPartialRejudge(TwoCampsTestCase):
                 response = self.client.post(url, {"rejudge_type": "SELECTED", "tests": tests})
                 self.assertEqual(response.status_code, 200)
             self.assertEqual(judge.call_count, 0)
+
+
+class TestCampProblemWithoutRound(TwoCampsTestCase):
+    """Deleting a round in the camp panel leaves its problems, with their
+    submissions, in the camp without a round. They must stay manageable.
+    """
+
+    CODE = TestCampPartialRejudge.CODE
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.get(username="test_user3")
+        ContestPermission.objects.create(user=self.admin, contest=self.camp_a, permission="contests.contest_admin")
+        Test.objects.filter(problem_instance=self.pi_a).update(time_limit=20000)
+        self.assertTrue(self.client.login(username="test_user"))
+        with fake_time(_date(1, hour=1)):
+            url = reverse("submit", kwargs={"contest_id": "c"})
+            self.client.post(url, {"problem_instance_id": self.pi_a.id, "file": ContentFile(self.CODE, name="a.c")})
+        self.submission = self._submissions_of_users(self.pi_a).get()
+        self.assertEqual(self.submission.score, IntegerScore(100))
+        ProblemInstance.objects.filter(id=self.pi_a.id).update(round=None)
+        self.assertTrue(self.client.login(username="test_user3"))
+
+    def test_rejudge(self):
+        Submission.objects.filter(id=self.submission.id).update(score=None, status="?")
+        url = reverse("rejudge_submission", kwargs={"contest_id": "c", "submission_id": self.submission.id})
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.score, IntegerScore(100))
+
+        Submission.objects.filter(id=self.submission.id).update(score=None, status="?")
+        url = reverse("rejudge_all_submissions_for_problem", kwargs={"contest_id": "c", "problem_instance_id": self.pi_a.id})
+        self.assertEqual(self.client.post(url, {"rejudge_type": "FULL"}).status_code, 302)
+        self.submission.refresh_from_db()
+        self.assertEqual(self.submission.score, IntegerScore(100))
+
+    def test_staff_pages_open(self):
+        for name, kwargs in (
+            ("monitoring", {}),
+            ("submission", {"submission_id": self.submission.id}),
+            ("czeciecamp_panel", {}),
+            ("llmdetect_panel", {}),
+            ("oioioiadmin:contests_probleminstance_changelist", {}),
+            ("oioioiadmin:contests_submission_changelist", {}),
+        ):
+            with self.subTest(page=name):
+                self.assertEqual(self.client.get(reverse(name, kwargs={"contest_id": "c", **kwargs})).status_code, 200)
