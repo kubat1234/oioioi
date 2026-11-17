@@ -11,8 +11,8 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from oioioi.contests.controllers import get_score_badge_class
-from oioioi.contests.models import ProblemInstance, Submission, SubmissionReport
-from oioioi.contests.utils import has_any_active_round, is_contest_basicadmin, is_contest_observer
+from oioioi.contests.models import ProblemInstance, Submission, SubmissionReport, UserResultForContest
+from oioioi.contests.utils import RoundTimes, has_any_active_round, is_contest_basicadmin, is_contest_observer
 from oioioi.czeciecamp.models import (
     DAILY_NAME,
     MEDALS_NONE,
@@ -166,6 +166,16 @@ class CzecieCampContestController(ProgrammingContestController):
         result.status = best.status
         result.submission_report = SubmissionReport.objects.filter(submission=best, status="ACTIVE", kind="NORMAL").first()
 
+    def update_user_results(self, user, problem_instance):
+        if problem_instance.round is not None:
+            return super().update_user_results(user, problem_instance)
+        # A problem without a round (allow_problems_without_round) has no result of a round.
+        problem_instance.problem.controller.update_user_results(user, problem_instance)
+        with transaction.atomic():
+            result, _created = UserResultForContest.objects.select_for_update().get_or_create(user=user, contest=self.contest)
+            self.update_user_result_for_contest(result)
+            result.save()
+
     def show_last_submission_status(self, request):
         # The problems list of a camp shows only the score.
         return False
@@ -223,6 +233,20 @@ class CzecieCampContestController(ProgrammingContestController):
         get_camp_config(self.contest)
         if not self.contest.camp_rankings.exists():
             create_default_rankings(self.contest)
+
+    def get_round_times(self, request, round):
+        if round is None:
+            # A problem without a round: no dates, only admins get to it.
+            return RoundTimes(None, None, self.contest)
+        return super().get_round_times(request, round)
+
+    def can_see_problem(self, request_or_context, problem_instance, no_admin=False):
+        """A problem without a round is for admins only: they can open it and
+        submit to it, e.g. to try it out before it goes into a round.
+        """
+        if problem_instance.round is None:
+            return not no_admin and self.make_context(request_or_context).is_admin
+        return super().can_see_problem(request_or_context, problem_instance, no_admin)
 
     def can_see_round(self, request_or_context, round, no_admin=False):
         """While a round is active, participants see only the active rounds.

@@ -29,7 +29,8 @@ def make_test(env, submission, **kwargs):
        * ``tests``: a dictionary mapping test names to test envs
     """
     assert submission.kind == "TESTRUN"
-    config = TestRunConfig.objects.get(problem_instance__problem__id=env["problem_id"])
+    # Of this problem instance: the same problem may have test runs in several contests.
+    config = TestRunConfig.objects.get(problem_instance=submission.problem_instance_id)
 
     test_env = {}
     test_env["name"] = "test"

@@ -1511,6 +1511,56 @@ class TestRejudgeTypesView(TestCase):
         self.assertNotContains(response, "Tests:")
 
 
+class TestRejudgeSelectedSubmissionsPermissions(TestCase):
+    """The view that rejudge_action posts to, which judges the chosen submissions."""
+
+    fixtures = [
+        "test_users",
+        "test_contest",
+        "test_full_package",
+        "test_problem_instance",
+        "test_submission",
+        "test_permissions",
+    ]
+
+    def _rejudge(self, contest_id="c"):
+        url = reverse("oioioiadmin:contests_submission_changelist", kwargs={"contest_id": contest_id}) + "rejudge/"
+        with patch("oioioi.programs.controllers.ProgrammingProblemController.judge") as judge:
+            response = self.client.post(url, {"submissions": ["1"], "rejudge_type": "FULL"})
+        return response, judge.call_count
+
+    def test_anonymous_cannot_rejudge(self):
+        response, judged = self._rejudge()
+        self.assertEqual(judged, 0)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response["Location"])
+
+    def test_participant_cannot_rejudge(self):
+        self.assertTrue(self.client.login(username="test_user"))
+        response, judged = self._rejudge()
+        self.assertEqual((response.status_code, judged), (403, 0))
+
+    def test_contest_admin_can_rejudge(self):
+        self.assertTrue(self.client.login(username="test_contest_basicadmin"))
+        response, judged = self._rejudge()
+        self.assertEqual((response.status_code, judged), (302, 1))
+
+    def test_admin_of_another_contest_cannot_rejudge(self):
+        other = Contest.objects.create(id="other", name="Other", controller_name="oioioi.programs.controllers.ProgrammingContestController")
+        ContestPermission.objects.create(user=User.objects.get(username="test_user"), contest=other, permission="contests.contest_admin")
+        self.assertTrue(self.client.login(username="test_user"))
+        # Submission 1 belongs to contest "c".
+        response, judged = self._rejudge(contest_id="other")
+        self.assertEqual((response.status_code, judged), (302, 0))
+
+    def test_get_is_rejected(self):
+        self.assertTrue(self.client.login(username="test_admin"))
+        url = reverse("oioioiadmin:contests_submission_changelist", kwargs={"contest_id": "c"}) + "rejudge/"
+        with patch("oioioi.programs.controllers.ProgrammingProblemController.judge") as judge:
+            response = self.client.get(url)
+        self.assertEqual((response.status_code, judge.call_count), (403, 0))
+
+
 class TestContestAdmin(TestCase):
     fixtures = ["test_users"]
 

@@ -144,6 +144,18 @@ def _override_tests_limits(language, tests):
     return new_limits
 
 
+def _kept_test_reports(env):
+    """Reports of tests whose results a partial rejudge may keep: the ones
+    from the active reports of the kinds which the rejudge is going to
+    replace. ``USER_OUTS`` reports have no scores, so they have nothing to keep.
+    """
+    return TestReport.objects.filter(
+        submission_report__submission__id=env["submission_id"],
+        submission_report__status="ACTIVE",
+        submission_report__kind__in=env.get("report_kinds", ["INITIAL", "NORMAL"]),
+    ).exclude(submission_report__kind="USER_OUTS")
+
+
 @_skip_on_compilation_error
 @transaction.atomic
 def collect_tests(env, **kwargs):
@@ -168,14 +180,9 @@ def collect_tests(env, **kwargs):
 
     problem_instance = env["problem_instance_id"]
     if env["is_rejudge"]:
-        submission = env["submission_id"]
         rejudge_type = env["extra_args"].setdefault("rejudge_type", "FULL")
         tests_to_judge = env["extra_args"].setdefault("tests_to_judge", [])
-        # USER_OUTS reports have no scores, so they have nothing to keep.
-        test_reports = TestReport.objects.filter(
-            submission_report__submission__id=submission,
-            submission_report__status="ACTIVE",
-        ).exclude(submission_report__kind="USER_OUTS")
+        test_reports = list(_kept_test_reports(env))
         tests_used = [report.test_name for report in test_reports]
         if not tests_used:
             # E.g. after a compilation error: no results to keep, so only a full run gives a real score.
@@ -189,6 +196,15 @@ def collect_tests(env, **kwargs):
             tests_to_judge = [t for t in tests_to_judge if t in existing_tests]
         elif rejudge_type == "FULL":
             tests_to_judge = [t.name for t in tests]
+        if rejudge_type != "FULL":
+            # A result is kept together with the points its test was worth then.
+            # If the test is worth something else now, the result is judged again:
+            # tests of one group must be worth the same.
+            old_max_scores = {report.test_name: report.max_score for report in test_reports}
+            for test in tests:
+                old_max_score = old_max_scores.get(test.name)
+                if test.name not in tests_to_judge and isinstance(old_max_score, IntegerScore) and old_max_score.to_int() != test.max_score:
+                    tests_to_judge.append(test.name)
     else:
         tests_to_judge = [t.name for t in tests]
 
@@ -352,11 +368,7 @@ def grade_tests(env, **kwargs):
             test_result["max_score"] = max_score and max_score.serialize()
             test_result["status"] = status
         else:
-            report = TestReport.objects.get(
-                submission_report__submission__id=env["submission_id"],
-                submission_report__status="ACTIVE",
-                test_name=test_name,
-            )
+            report = _kept_test_reports(env).filter(test_name=test_name).order_by("-id")[0]
             score = report.score
             max_score = report.max_score
             status = report.status
@@ -367,6 +379,10 @@ def grade_tests(env, **kwargs):
             test_result["status"] = status
             test_result["time_used"] = time_used
             test_result["mem_used"] = mem_used
+            # The result was measured with the limits of that time, and came with this comment.
+            test_result["exec_time_limit"] = report.test_time_limit
+            test_result["exec_mem_limit"] = report.test_mem_limit
+            test_result["result_string"] = report.comment
             # Subtask dependencies read it, and make_report only stores partial ones.
             if report.result_percentage_numerator is not None:
                 test_result["result_percentage"] = (report.result_percentage_numerator, report.result_percentage_denominator)

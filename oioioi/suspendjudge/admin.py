@@ -26,6 +26,11 @@ class SuspendJudgeProblemInstanceAdminMixin:
     def _resume(self, instance_id):
         get_object_or_404(SuspendedProblem, problem_instance=instance_id).delete()
 
+    def _check_contest(self, request, instance_id):
+        # The id comes from the URL; an admin of one contest must not touch
+        # the problems of another one.
+        get_object_or_404(ProblemInstance, pk=instance_id, contest=request.contest)
+
     def _rejudge(self, instance_id):
         suspended = Submission.objects.filter(queuedjob__state="SUSPENDED", problem_instance=instance_id)
         for submission in suspended:
@@ -42,6 +47,7 @@ class SuspendJudgeProblemInstanceAdminMixin:
     @method_decorator(enforce_condition(contest_exists & is_contest_basicadmin))
     @method_decorator(require_POST)
     def resume_and_rejudge_view(self, request, problem_instance_id):
+        self._check_contest(request, problem_instance_id)
         self._resume(problem_instance_id)
         self._rejudge(problem_instance_id)
         return redirect("oioioiadmin:contests_probleminstance_changelist")
@@ -49,6 +55,7 @@ class SuspendJudgeProblemInstanceAdminMixin:
     @method_decorator(enforce_condition(contest_exists & is_contest_basicadmin))
     @method_decorator(require_POST)
     def resume_and_clear_view(self, request, problem_instance_id):
+        self._check_contest(request, problem_instance_id)
         self._resume(problem_instance_id)
         self._clear_queue(problem_instance_id)
         return redirect("oioioiadmin:contests_probleminstance_changelist")
@@ -56,12 +63,14 @@ class SuspendJudgeProblemInstanceAdminMixin:
     @method_decorator(enforce_condition(contest_exists & is_contest_basicadmin))
     @method_decorator(require_POST)
     def suspend_all_view(self, request, problem_instance_id):
+        self._check_contest(request, problem_instance_id)
         self._suspend(problem_instance_id)
         return redirect("oioioiadmin:contests_probleminstance_changelist")
 
     @method_decorator(enforce_condition(contest_exists & is_contest_basicadmin))
     @method_decorator(require_POST)
     def suspend_all_but_init_view(self, request, problem_instance_id):
+        self._check_contest(request, problem_instance_id)
         self._suspend(problem_instance_id, False)
         return redirect("oioioiadmin:contests_probleminstance_changelist")
 

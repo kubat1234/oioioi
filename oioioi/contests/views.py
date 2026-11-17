@@ -255,7 +255,7 @@ def problems_list_view(request):
             )
             for pi in problem_instances
         ],
-        key=lambda p: (p[2].get_key_for_comparison(), p[0].round.name, p[0].short_name),
+        key=lambda p: (p[2].get_key_for_comparison(), p[0].round.name if p[0].round else "", p[0].short_name),
     )
 
     show_submissions_limit = any(p[6] for p in problems_statements)
@@ -286,7 +286,7 @@ def problems_list_view(request):
 @enforce_condition(contest_exists & can_enter_contest)
 def problem_statement_view(request, problem_instance):
     controller = request.contest.controller
-    pi = get_object_or_404(ProblemInstance, round__contest=request.contest, short_name=problem_instance)
+    pi = get_object_or_404(ProblemInstance, contest=request.contest, short_name=problem_instance)
 
     if not controller.can_see_problem(request, pi) or not controller.can_see_statement(request, pi):
         raise PermissionDenied
@@ -323,7 +323,7 @@ def _can_access_editorial(request, pi):
 @enforce_condition(contest_exists & can_enter_contest)
 def problem_editorial_view(request, problem_instance):
     controller = request.contest.controller
-    pi = get_object_or_404(ProblemInstance, round__contest=request.contest, short_name=problem_instance)
+    pi = get_object_or_404(ProblemInstance, contest=request.contest, short_name=problem_instance)
 
     if not controller.can_see_problem(request, pi):
         raise PermissionDenied
@@ -364,7 +364,7 @@ def problem_statement_zip_index_view(request, problem_instance, statement_id):
 @enforce_condition(contest_exists & can_enter_contest)
 def problem_statement_zip_view(request, problem_instance, statement_id, path):
     controller = request.contest.controller
-    pi = get_object_or_404(ProblemInstance, round__contest=request.contest, short_name=problem_instance)
+    pi = get_object_or_404(ProblemInstance, contest=request.contest, short_name=problem_instance)
     statement = get_object_or_404(ProblemStatement, problem__probleminstance=pi, id=statement_id)
 
     if not controller.can_see_problem(request, pi) or not controller.can_see_statement(request, pi):

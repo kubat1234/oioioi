@@ -201,7 +201,9 @@ class ProgrammingProblemController(ProblemController):
         environ["problem_id"] = problem.id
         environ["problem_short_name"] = problem.short_name
         if contest is not None:
-            environ["round_id"] = round.id
+            # Some contest types allow problems without a round.
+            if round is not None:
+                environ["round_id"] = round.id
             environ["contest_id"] = contest.id
         environ["submission_owner"] = submission.user.username if submission.user else None
         environ["oioioi_instance"] = settings.SITE_NAME
