@@ -28,6 +28,7 @@ from oioioi.programs.models import (
     TestReport,
     UserOutGenStatus,
 )
+from oioioi.programs.utils import sanitize_worker_text
 
 logger = logging.getLogger(__name__)
 
@@ -591,7 +592,7 @@ def _make_base_report(env, submission, kind):
 
     if not isinstance(compilation_message, str):
         compilation_message = compilation_message.decode("utf8")
-    compilation_report.compiler_output = compilation_message
+    compilation_report.compiler_output = sanitize_worker_text(compilation_message)
     compilation_report.save()
 
     return submission, submission_report
@@ -621,6 +622,7 @@ def make_report(env, kind="NORMAL", save_scores=True, **kwargs):
         return env
     tests = env["tests"]
 
+    max_comment_length = TestReport._meta.get_field("comment").max_length
     test_results = env.get("test_results", {})
     for test_name, result in test_results.items():
         test = tests[test_name]
@@ -642,12 +644,10 @@ def make_report(env, kind="NORMAL", save_scores=True, **kwargs):
             test_report.result_percentage_numerator = percentage.numerator
             test_report.result_percentage_denominator = percentage.denominator
 
-        # PostgreSQL rejects NUL in text columns; checkers may emit it (e.g. when escaping bad output).
-        comment = result.get("result_string", "").replace("\x00", "")
+        comment = result.get("result_string", "")
         if comment.lower() in ["ok", "time limit exceeded"]:  # Annoying
             comment = ""
-        max_comment_length = TestReport._meta.get_field("comment").max_length
-        test_report.comment = (comment[: max_comment_length - 1] + "…") if len(comment) > max_comment_length else comment
+        test_report.comment = sanitize_worker_text(comment, max_comment_length)
         if env.get("save_outputs", False):
             test_report.output_file = filetracker_to_django_file(result["out_file"])
         test_report.save()

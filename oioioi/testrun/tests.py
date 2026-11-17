@@ -11,6 +11,7 @@ from oioioi.base.tests import (
     check_ajax_not_accessible,
     check_not_accessible,
     fake_time,
+    needs_linux,
 )
 from oioioi.base.utils.archive import Archive
 from oioioi.contests.models import Contest, ProblemInstance, Submission
@@ -32,6 +33,7 @@ class TestTestrunViews(TestCase):
         "test_testrun",
     ]
 
+    @needs_linux
     def test_status_visible(self):
         contest = Contest.objects.get()
         self.assertTrue(self.client.login(username="test_user"))
@@ -74,6 +76,29 @@ class TestTestrunViews(TestCase):
 
             no_whitespaces = re.sub(r"\s*", "", submission_view.content.decode("utf-8"))
             self.assertIn(">OK</td>", no_whitespaces)
+
+    def test_signal_hints(self):
+        self.assertTrue(self.client.login(username="test_user"))
+        submission = TestRunProgramSubmission.objects.get(pk=1)
+        report = TestRunReport.objects.get(submission_report__submission=submission)
+        url = reverse(
+            "submission",
+            kwargs={
+                "contest_id": submission.problem_instance.contest.id,
+                "submission_id": submission.id,
+            },
+        )
+
+        for prefix in ["process", "program"]:
+            report.comment = f"{prefix} exited due to signal 6"
+            report.save(update_fields=["comment"])
+            response = self.client.get(url)
+            self.assertContains(response, "Most common causes of the SIGABRT signal")
+
+        report.comment = "program exited due to signal invalid"
+        report.save(update_fields=["comment"])
+        response = self.client.get(url)
+        self.assertNotContains(response, "Most common causes of the SIGABRT signal")
 
     def test_input_views(self):
         self.assertTrue(self.client.login(username="test_user"))
@@ -308,7 +333,7 @@ class TestHandlers(TestCase):
             environ["test_results"]["test"]["result_string"] = 'WRONG: got "<0x\x005>"'
             graded_environ = handlers.make_report(handlers.grade_submission(environ))
             report = TestRunReport.objects.get(submission_report=graded_environ["report_id"])
-            self.assertEqual('WRONG: got "<0x5>"', report.comment)
+            self.assertEqual('WRONG: got "<0x\ufffd5>"', report.comment)
 
             handlers.delete_output(graded_environ)
         except Exception:

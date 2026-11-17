@@ -10,6 +10,7 @@ from oioioi.programs.handlers import (
     _make_base_report,
     _skip_on_compilation_error,
 )
+from oioioi.programs.utils import sanitize_worker_text
 from oioioi.testrun.models import TestRunConfig, TestRunProgramSubmission, TestRunReport
 
 
@@ -95,15 +96,13 @@ def make_report(env, **kwargs):
     test = env["tests"]["test"]
     test_result = env["test_results"]["test"]
 
-    # PostgreSQL rejects NUL in text columns; checkers may emit it (e.g. when escaping bad output).
-    comment = test_result.get("result_string", "").replace("\x00", "")
+    comment = test_result.get("result_string", "")
     if comment.lower() == "ok":  # Annoying
         comment = ""
 
     testrun_report = TestRunReport(submission_report=submission_report)
     testrun_report.status = env["status"]
-    max_comment_length = TestRunReport._meta.get_field("comment").max_length
-    testrun_report.comment = (comment[: max_comment_length - 1] + "…") if len(comment) > max_comment_length else comment
+    testrun_report.comment = sanitize_worker_text(comment, TestRunReport._meta.get_field("comment").max_length)
     testrun_report.time_used = test_result["time_used"]
     testrun_report.mem_used = test_result["mem_used"]
     testrun_report.test_time_limit = test.get("exec_time_limit")
