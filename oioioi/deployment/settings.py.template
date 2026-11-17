@@ -361,7 +361,7 @@ if USE_SYSTEM_COMPILERS:
 # By uncommenting the below dict you can change all or any one of them.
 # DEFAULT_COMPILERS = {'C': 'gcc14_2_0_c17', 'C++': 'g++14_2_cpp23_amd64',
 #                      'Pascal': 'fpc2_6_2', 'Java': 'java1_8',
-#                      'Python': 'python', 'Output-only': 'output-only'}
+#                      'Python': 'python_3_13_numpy_amd64', 'Output-only': 'output-only'}
 
 # Set the following option to false to enable the safe execution supervisor.
 USE_UNSAFE_EXEC = True
