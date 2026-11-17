@@ -32,7 +32,7 @@ rst/                       upstream's Sphinx docs
 docs/                      fork docs (this file)
 AGENTS.md                  upstream's guide for coding agents
 CLAUDE.md                  fork's guide; overrides AGENTS.md where they differ
-MERGE_REPORT.md, REVIEW.md reports of the 2026-11 merge and review
+internal/                  local notes and reports, git-ignored
 ```
 
 ## 3. Apps
@@ -244,8 +244,7 @@ gives the authoritative one):
 | Translations | Polish strings for fork changes in upstream apps | `oioioi/_locale/locale-overrides/pl/` (fork apps carry their own `locale/`) |
 | Infra | Production compose, `deploy.sh`, `.env.example`, fork CI and Release workflows, Dockerfile layer order | repo root, `.github/workflows/` |
 
-`MERGE_REPORT.md` lists every place where these met upstream changes in the last merge, and the open
-decisions.
+PR #23 (the upstream merge of 2026-11) lists where these met upstream changes and the open decisions.
 
 ## 8. Pitfalls
 

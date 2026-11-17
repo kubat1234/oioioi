@@ -1004,7 +1004,7 @@ class TestCampRankingVisibilityProperties(CampPropertiesTestCase):
                         (row["sum"], row["daily_sum"], row["stale_sum"]), tuple(admin_rows[user][field] for field in ("sum", "daily_sum", "stale_sum"))
                     )
 
-    @pytest.mark.xfail(strict=True, reason="Known: a freeze set before the end of a round does not freeze Dzienne (REVIEW.md 2.5)")
+    @pytest.mark.xfail(strict=True, reason="Known: a freeze set before the end of a round does not freeze Dzienne")
     def test_freeze_hides_daily_points(self):
         """The same as for Stałe: a submission sent after the freeze, while its round is still running, must not
         change the points participants see. Today Dzienne ignores the freeze, so it does.

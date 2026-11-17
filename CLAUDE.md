@@ -10,8 +10,7 @@ Read next, in this order:
 
 - `docs/ARCHITECTURE.md` — apps, the submission → judging → ranking flow, the camp rules and where they live, what the fork changes in upstream code, pitfalls.
 - `AGENTS.md` — upstream's generic guide for coding agents (code style, test conventions). **Where it differs from this file, this file wins** (branch names, PR workflow, CI).
-- `MERGE_REPORT.md` — the upstream merge of 2026-11-16: every place both sides changed, open decisions, the pre-deploy checklist.
-- `REVIEW.md` — findings of the 2026-11 review, fixed and open.
+- `internal/` (git-ignored, only in the maintainer's checkout) — local reports of past merges and reviews, e.g. `internal/MERGE_REPORT.md`, `internal/REVIEW.md`. The upstream merge of 2026-11 is summed up in PR #23.
 
 ## Git workflow (fork kubat1234/oioioi)
 
@@ -21,7 +20,7 @@ Read next, in this order:
 - Production (`docker-compose.yml`) runs the released image `ghcr.io/kubat1234/oioioi:${SIO_TAG}`; it is updated only with `./deploy.sh <version>` (refuses during a running round, backs up the DB, runs migrations in the one-shot `migrate` service before `web` starts). Do not build images on the server.
 - Releases: Actions → Release → Run workflow (`.github/workflows/release.yml`) tags the already built image of the current `main` commit as `vYYYY.MM.DD[.N]` and `latest` and creates a GitHub Release with generated notes. Never create `v*` tags by hand.
 - `sio2project/oioioi` `master` is upstream (`origin/master` in the maintainer's clone). Do NOT merge upstream into `main` without the maintainer's explicit OK. PRs meant for upstream branch from upstream `master`, not from `main`.
-- Merging upstream: on a branch (`merge-upstream`), as a real merge; fixes after the merge as separate commits; write up every file both sides changed (see `MERGE_REPORT.md` for the format). Read the upstream diff of `oioioi/default_settings.py` and `Dockerfile` line by line — they change production behaviour without touching fork code. The PR of such a branch must be merged with **"Create a merge commit", not squashed**: a squash drops upstream from the history of `main` and the next upstream merge conflicts on everything again.
+- Merging upstream: on a branch (`merge-upstream`), as a real merge; fixes after the merge as separate commits; write up every file both sides changed in a report in `internal/` and the important parts in the PR description (as in PR #23). Read the upstream diff of `oioioi/default_settings.py` and `Dockerfile` line by line — they change production behaviour without touching fork code. The PR of such a branch must be merged with **"Create a merge commit", not squashed**: a squash drops upstream from the history of `main` and the next upstream merge conflicts on everything again.
 - Keep changes to upstream files minimal and local (a hook on a controller instead of an edit in a view, a new template instead of a rewritten one): every changed upstream line is a future merge conflict. No drive-by refactors, reformatting or dependency bumps.
 
 ## Development environment (Docker)
