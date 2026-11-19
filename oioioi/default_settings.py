@@ -505,7 +505,9 @@ AVAILABLE_COMPILERS = {
         'java1_8': {'display_name': 'java:1.8'}
     },
     'Python': {
-        'python': {'display_name': 'python'}
+        # Needs sioworkers with Python support (sio2project/sioworkers#55)
+        # and the compiler-python3.13.5-numpy sandbox in the filetracker.
+        'python_3_13_numpy_amd64': {'display_name': 'Python 3.13 + numpy'}
     },
     'Output-only': {
         'output-only': {'display_name': 'output-only'}
@@ -538,7 +540,7 @@ SYSTEM_COMPILERS = {
 # as in SUBMITTABLE_LANGUAGES and value contained in AVAILABLE_COMPILERS.
 DEFAULT_COMPILERS = {'C': 'gcc14_2_0_c17', 'C++': 'g++14_2_cpp23_amd64',
                      'Pascal': 'fpc2_6_2', 'Java': 'java1_8',
-                     'Python': 'python', 'Output-only': 'output-only'}
+                     'Python': 'python_3_13_numpy_amd64', 'Output-only': 'output-only'}
 
 SYSTEM_DEFAULT_COMPILERS = {'C': 'system-gcc', 'C++': 'system-g++',
                             'Pascal': 'system-fpc', 'Java': 'system-java',
