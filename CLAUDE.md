@@ -102,6 +102,7 @@ Changes in upstream apps (full table in `docs/ARCHITECTURE.md` §7): login by us
 The long list is `docs/ARCHITECTURE.md` §8. The ones that bite most often:
 
 - Production `settings.py` lives on the server and imports `default_settings.py`: changing a default changes production at the next deploy. Sandboxes (compilers) are files in Filetracker, not part of the image.
+- sioworkers comes from the fork `kubat1234/sioworkers` (upstream + Python), pinned by tag in `pyproject.toml` (`…/archive/refs/tags/v1.5.11-pyN.tar.gz`) and `uv.lock`. A sioworkers change reaches production only by a new tag there plus a PR here bumping the tag (`uv lock`). A new compiler also needs its entry in `AVAILABLE_COMPILERS` (and `DEFAULT_COMPILERS` if it is the default), and its sandbox uploaded to the production Filetracker. Details: `CLAUDE.md` on the fork's `python` branch.
 - Tests use SQLite, production PostgreSQL (NUL bytes, regex lookups, locking differ).
 - A view that changes anything rankings depend on must call `Ranking.invalidate_contest(contest)`. `serialize_ranking` runs in a daemon, without a real request.
 - Use `request.timestamp`, not `timezone.now()`, in views and controllers.
