@@ -505,9 +505,11 @@ AVAILABLE_COMPILERS = {
         'java1_8': {'display_name': 'java:1.8'}
     },
     'Python': {
-        # Needs sioworkers with Python support (sio2project/sioworkers#55)
-        # and the compiler-python3.13.5-numpy sandbox in the filetracker.
-        'python_3_13_numpy_amd64': {'display_name': 'Python 3.13 + numpy'}
+        # Needs sioworkers with Python support (kubat1234/sioworkers, based on
+        # sio2project/sioworkers#55) and the compiler-python3.13.5-numpy /
+        # compiler-python3.13.5-sklearn sandboxes in the filetracker.
+        'python_3_13_numpy_amd64': {'display_name': 'Python 3.13 + numpy'},
+        'python_3_13_sklearn_amd64': {'display_name': 'Python 3.13 + sklearn, scipy, pandas'},
     },
     'Output-only': {
         'output-only': {'display_name': 'output-only'}
